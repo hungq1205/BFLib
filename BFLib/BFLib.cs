@@ -12,7 +12,7 @@ namespace BFLib
             public readonly Layer[] layers;
             public readonly DenseWeightMatrix[] weights;
 
-            public DenseNeuralNetwork(params long[] dims)
+            public DenseNeuralNetwork(params Layer[] dims)
             {
                 using (DenseNeuralNetworkBuilder builder = new DenseNeuralNetworkBuilder())
                 {
@@ -23,7 +23,7 @@ namespace BFLib
                     this.layers = bundle.Item1;
                     this.weights = bundle.Item2;
                     this.inDim = layers[0].dim;
-                    this.outDim = layers[layers.Length - 1].dim;
+                    this.outDim = layers[layers.LongLength - 1].dim;
                 }
             }
 
@@ -34,7 +34,7 @@ namespace BFLib
                 this.layers = bundle.Item1;
                 this.weights = bundle.Item2;
                 this.inDim = layers[0].dim;
-                this.outDim = layers[layers.Length - 1].dim;
+                this.outDim = layers[layers.LongLength - 1].dim;
 
                 if (disposeAfterwards)
                     builder.Dispose();
@@ -42,16 +42,16 @@ namespace BFLib
 
             public void WeightAssignForEach(Func<double> func)
             {
-                for (int i = 0; i < weights.Length; i++)
-                    for (int j = 0; j < weights[i].matrix.GetLength(0); j++)
-                        for (int k = 0; k < weights[i].matrix.GetLength(1); k++)
+                for (int i = 0; i < weights.LongLength; i++)
+                    for (int j = 0; j < weights[i].matrix.GetLongLength(0); j++)
+                        for (int k = 0; k < weights[i].matrix.GetLongLength(1); k++)
                             weights[i].matrix[j, k] = func();
             }
 
             public void BiasAssignForEach(Func<double> func)
             {
-                for (int i = 0; i < layers.Length; i++)
-                    for (int j = 0; j < layers[i].biases.Length; j++)
+                for (int i = 0; i < layers.LongLength; i++)
+                    for (int j = 0; j < layers[i].biases.LongLength; j++)
                         layers[i].biases[j] = func();
             }
 
@@ -60,11 +60,14 @@ namespace BFLib
             /// </summary>
             public void GradientDescent(double[] sampleOutputs, DenseNNForwardResult forwardLog, double learningRate)
             {
-                double[] errors = new double[sampleOutputs.Length];
+                double[] errors = new double[sampleOutputs.LongLength];
 
                 // Derivative of || 0.5 * (y - h(inputs))^2 ||
-                for (int i = 0; i < sampleOutputs.Length; i++)
-                    errors[i] = forwardLog.outputs[i] - sampleOutputs[i];
+                for (int i = 0; i < sampleOutputs.LongLength; i++)
+                    errors[i] = (forwardLog.outputs[i] - sampleOutputs[i]) * layers[layers.LongLength - 1].FunctionDifferential(forwardLog.layerInputs[layers.LongLength - 1][i]);
+
+                for (int i = 0; i < layers[layers.LongLength - 1].dim; i++)
+                    layers[layers.LongLength - 1].biases[i] -= learningRate * errors[i]; // bias update
 
                 GradientDescentLayers(errors, forwardLog, learningRate, layers.Length - 1);
             }
@@ -85,11 +88,11 @@ namespace BFLib
                 {
                     for (int j = 0; j < layers[fromLayer - 1].dim; j++)
                     {
-                        // pass-down-error = error * (corresponding weight) * (derivative of (l - 1) layer function with respect to its input)
-                        layerErrors[j] += errors[i] * weights[fromLayer - 1].matrix[i, j] * layers[fromLayer - 1].FunctionDifferential(layers[fromLayer - 1].biases[j], forwardLog.layerInputs[fromLayer - 1][j]);
-
                         // weight update
-                        weights[fromLayer - 1].matrix[i, j] -= learningRate * errors[i] * layers[fromLayer - 1].ForwardComp(forwardLog.layerInputs[fromLayer - 1][j], layers[fromLayer - 1].biases[j]);
+                        weights[fromLayer - 1].matrix[i, j] -= learningRate * errors[i] * layers[fromLayer - 1].ForwardComp(forwardLog.layerInputs[fromLayer - 1][j]);
+
+                        // pass-down-error = error * (corresponding weight) * (derivative of (l - 1) layer function with respect to its input)
+                        layerErrors[j] += errors[i] * weights[fromLayer - 1].matrix[i, j] * layers[fromLayer - 1].FunctionDifferential(forwardLog.layerInputs[fromLayer - 1][j]);
                     }
                 }
 
@@ -104,22 +107,14 @@ namespace BFLib
 
             public DenseNNForwardResult Forward(double[] inputs)
             {
-                double[][] layerInputs = new double[layers.Length][];
+                double[][] layerInputs = new double[layers.LongLength][];
+                double[] outputs = ForwardLayers(inputs, layers.Length - 1, 0, ref layerInputs);
 
-                ForwardLayers(inputs, layers.Length - 1, 0, ref layerInputs);
-
-                return new DenseNNForwardResult(layerInputs);
+                return new DenseNNForwardResult(layerInputs, outputs);
             }
 
             public double[] ForwardLayers(double[] inputs, int toLayer, int fromLayer, ref double[][] layerInputs)
             {
-                // Output layer (last layer) doesn't have bias
-                if (toLayer == layers.Length - 1)
-                {
-                    layerInputs[toLayer] = weights[toLayer - 1].Forward(ForwardLayers(inputs, toLayer - 1, fromLayer, ref layerInputs)).ToArray();
-                    return layerInputs[toLayer];
-                }
-
                 if (fromLayer < toLayer)
                     layerInputs[toLayer] = weights[toLayer - 1].Forward(ForwardLayers(inputs, toLayer - 1, fromLayer, ref layerInputs)).ToArray();
                 else
@@ -132,12 +127,12 @@ namespace BFLib
         public class DenseNNForwardResult
         {
             public double[][] layerInputs;
+            public double[] outputs;
 
-            public double[] outputs => layerInputs[layerInputs.Length - 1];
-
-            public DenseNNForwardResult(double[][] layerInputs) 
+            public DenseNNForwardResult(double[][] layerInputs, double[] outputs) 
             {
                 this.layerInputs = layerInputs;
+                this.outputs = outputs;
             }
         }
 
@@ -150,9 +145,9 @@ namespace BFLib
                 layers = new List<Layer>();
             }
 
-            public void NewLayers(long[] dims)
+            public void NewLayers(params Layer[] dims)
             {
-                foreach (int dim in dims)
+                foreach (Layer dim in dims)
                     NewLayer(dim);
             }
 
@@ -192,6 +187,59 @@ namespace BFLib
             public abstract Tuple<Layer[], DenseWeightMatrix[]> Build();
         }
 
+        public enum ActivationFunc
+        {
+            ReLU,
+            Sigmoid,
+            Tanh,
+            Linear
+        }
+
+        public class ActivationLayer : Layer
+        {
+            public readonly ActivationFunc func;
+
+            public ActivationLayer(int dim, ActivationFunc func) : base(dim)
+            {
+                this.func = func;
+            }
+
+            public override double ForwardComp(double x)
+            {
+                switch (func)
+                {
+                    case ActivationFunc.Sigmoid:
+                        return 1 / (1 + Math.Exp(-x));
+                    case ActivationFunc.Tanh:
+                        return Math.Tanh(x);
+                    case ActivationFunc.ReLU:
+                        return (x > 0) ? x : 0;
+                    case ActivationFunc.Linear:
+                    default: 
+                        return x;
+                }
+            }
+
+            public override double FunctionDifferential(double x)
+            {
+                switch (func)
+                {
+                    case ActivationFunc.Sigmoid:
+                        double sigmoid = ForwardComp(x);
+                        return sigmoid * (1 - sigmoid);
+                    case ActivationFunc.Tanh:
+                        double sqrExp = Math.Exp(x);
+                        sqrExp *= sqrExp;
+                        return 4 / (sqrExp + (1 / sqrExp) + 2);
+                    case ActivationFunc.ReLU:
+                        return (x > 0) ? 1 : 0;
+                    case ActivationFunc.Linear:
+                    default: 
+                        return 1;
+                }
+            }
+        }
+
         public class Layer
         {
             public readonly int dim;
@@ -212,15 +260,17 @@ namespace BFLib
             public virtual IEnumerable<double> Forward(double[] inputs)
             {
                 for (int i = 0; i < dim; i++)
-                    yield return ForwardComp(inputs[i], biases[i]);
+                    yield return ForwardComp(inputs[i] + biases[i]);
             }
 
-            public virtual double ForwardComp(double input, double bias) => bias + input;
+            public virtual double ForwardComp(double x) => x;
 
             /// <summary>
             /// Get <b>df(bias, x) / dx</b> such <b>x</b> can be another function
             /// </summary>
-            public virtual double FunctionDifferential(double bias, double x) => 1;
+            public virtual double FunctionDifferential(double x) => 1;
+
+            public static implicit operator Layer(int dim) => new Layer(dim);
         }
 
         public class DenseWeightMatrix
@@ -254,7 +304,7 @@ namespace BFLib
             {
                 double output = 0;
 
-                for (int i = 0; i < inputs.Length; i++)
+                for (int i = 0; i < inputs.LongLength; i++)
                     output += matrix[outputIndex, i] * inputs[i];
 
                 return output;
