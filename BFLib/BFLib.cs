@@ -64,7 +64,7 @@ namespace BFLib
 
                 // Derivative of || 0.5 * (y - h(inputs))^2 ||
                 for (int i = 0; i < sampleOutputs.LongLength; i++)
-                    errors[i] = (forwardLog.outputs[i] - sampleOutputs[i]) * layers[layers.LongLength - 1].FunctionDifferential(forwardLog.layerInputs[layers.LongLength - 1][i]);
+                    errors[i] = (forwardLog.outputs[i] - sampleOutputs[i]) * layers[layers.LongLength - 1].FunctionDifferential(forwardLog.layerInputs[layers.LongLength - 1][i] + layers[layers.LongLength - 1].biases[i]);
 
                 for (int i = 0; i < layers[layers.LongLength - 1].dim; i++)
                     layers[layers.LongLength - 1].biases[i] -= learningRate * errors[i]; // bias update
@@ -88,11 +88,12 @@ namespace BFLib
                 {
                     for (int j = 0; j < layers[fromLayer - 1].dim; j++)
                     {
+                        double weightTemp = weights[fromLayer - 1].matrix[i, j];
                         // weight update
-                        weights[fromLayer - 1].matrix[i, j] -= learningRate * errors[i] * layers[fromLayer - 1].ForwardComp(forwardLog.layerInputs[fromLayer - 1][j]);
+                        weights[fromLayer - 1].matrix[i, j] -= learningRate * errors[i] * layers[fromLayer - 1].ForwardComp(forwardLog.layerInputs[fromLayer - 1][j] + layers[fromLayer - 1].biases[j]);
 
                         // pass-down-error = error * (corresponding weight) * (derivative of (l - 1) layer function with respect to its input)
-                        layerErrors[j] += errors[i] * weights[fromLayer - 1].matrix[i, j] * layers[fromLayer - 1].FunctionDifferential(forwardLog.layerInputs[fromLayer - 1][j]);
+                        layerErrors[j] += errors[i] * weightTemp * layers[fromLayer - 1].FunctionDifferential(forwardLog.layerInputs[fromLayer - 1][j] + layers[fromLayer - 1].biases[j]);
                     }
                 }
 
