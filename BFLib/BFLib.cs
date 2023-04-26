@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography.X509Certificates;
 
@@ -43,16 +44,14 @@ namespace BFLib
             public void WeightAssignForEach(Func<double> func)
             {
                 for (int i = 0; i < weights.LongLength; i++)
-                    for (int j = 0; j < weights[i].matrix.GetLongLength(0); j++)
-                        for (int k = 0; k < weights[i].matrix.GetLongLength(1); k++)
-                            weights[i].matrix[j, k] = func();
+                    weights[i].AssignForEach((inIndex, outIndex, weight) => func());
             }
 
             public void BiasAssignForEach(Func<double> func)
             {
                 for (int i = 0; i < layers.LongLength; i++)
-                    for (int j = 0; j < layers[i].biases.LongLength; j++)
-                        layers[i].biases[j] = func();
+                    for (int j = 0; j < layers[i].dim; j++)
+                        layers[i].SetBias(j, func());
             }
 
             /// <summary>
@@ -64,10 +63,11 @@ namespace BFLib
 
                 // Derivative of || 0.5 * (y - h(inputs))^2 ||
                 for (int i = 0; i < sampleOutputs.LongLength; i++)
-                    errors[i] = (forwardLog.outputs[i] - sampleOutputs[i]) * layers[layers.LongLength - 1].FunctionDifferential(forwardLog.layerInputs[layers.LongLength - 1][i] + layers[layers.LongLength - 1].biases[i]);
+                    errors[i] = (forwardLog.outputs[i] - sampleOutputs[i]) * layers[layers.LongLength - 1].FunctionDifferential(forwardLog.layerInputs[layers.LongLength - 1][i] + layers[layers.LongLength - 1].GetBias(i));
 
-                for (int i = 0; i < layers[layers.LongLength - 1].dim; i++)
-                    layers[layers.LongLength - 1].biases[i] -= learningRate * errors[i]; // bias update
+                if (layers[layers.LongLength - 1].useBias)
+                    for (int i = 0; i < layers[layers.LongLength - 1].dim; i++)
+                        layers[layers.LongLength - 1].SetBias(i, layers[layers.LongLength - 1].GetBias(i) - learningRate * errors[i]); // bias update
 
                 GradientDescentLayers(errors, forwardLog, learningRate, layers.Length - 1);
             }
@@ -84,23 +84,22 @@ namespace BFLib
 
                 double[] layerErrors = new double[layers[fromLayer - 1].dim];
 
-                for (int i = 0; i < layers[fromLayer].dim; i++)
+                weights[fromLayer - 1].AssignForEach((inIndex, outIndex, weightValue) =>
                 {
-                    for (int j = 0; j < layers[fromLayer - 1].dim; j++)
-                    {
-                        double weightTemp = weights[fromLayer - 1].matrix[i, j];
-                        // weight update
-                        weights[fromLayer - 1].matrix[i, j] -= learningRate * errors[i] * layers[fromLayer - 1].ForwardComp(forwardLog.layerInputs[fromLayer - 1][j] + layers[fromLayer - 1].biases[j]);
+                    double biasTemp = layers[fromLayer - 1].GetBias(inIndex);
 
-                        // pass-down-error = error * (corresponding weight) * (derivative of (l - 1) layer function with respect to its input)
-                        layerErrors[j] += errors[i] * weightTemp * layers[fromLayer - 1].FunctionDifferential(forwardLog.layerInputs[fromLayer - 1][j] + layers[fromLayer - 1].biases[j]);
-                    }
-                }
+                    // pass-down-error = error * (corresponding weight) * (derivative of (l - 1) layer function with respect to its input)
+                    layerErrors[inIndex] += errors[outIndex] * weightValue * layers[fromLayer - 1].FunctionDifferential(forwardLog.layerInputs[fromLayer - 1][inIndex] + layers[fromLayer - 1].GetBias(inIndex));
+
+                    // weight update
+                    return weightValue - learningRate * errors[outIndex] * layers[fromLayer - 1].ForwardComp(forwardLog.layerInputs[fromLayer - 1][inIndex] + biasTemp);
+                });
 
                 for (int i = 0; i < layers[fromLayer - 1].dim; i++)
                 {
                     // bias update
-                    layers[fromLayer - 1].biases[i] -= learningRate * layerErrors[i];
+                    if (layers[fromLayer - 1].useBias)
+                        layers[fromLayer - 1].SetBias(i, layers[fromLayer - 1].GetBias(i) - learningRate * layerErrors[i]);
                 }
 
                 GradientDescentLayers(layerErrors, forwardLog, learningRate, fromLayer - 1);
@@ -162,7 +161,7 @@ namespace BFLib
                 Layer clone = new Layer(layer.dim);
 
                 for (int i = 0; i < layer.dim; i++)
-                    clone.biases[i] = layer.biases[i];
+                    clone.SetBias(i, layer.GetBias(i));
 
                 layers.Add(clone);
             }
@@ -193,58 +192,16 @@ namespace BFLib
             ReLU,
             Sigmoid,
             Tanh,
-            Linear
-        }
-
-        public enum ForwardFunc
-        {
             NaturalLog,
-            Eponential,
-            None
-        }
-
-        public class ForwardLayer : Layer
-        {
-            public readonly ForwardFunc func;
-
-            public ForwardLayer(ForwardFunc func, int dim) : base(dim)
-            {
-                this.func = func;
-            }
-
-            public override IEnumerable<double> Forward(double[] inputs)
-            {
-                for (int i = 0; i < dim; i++)
-                    yield return ForwardComp(inputs[i]);
-            }
-
-            public override double ForwardComp(double x)
-            {
-                switch (func)
-                {
-                    case ForwardFunc.Eponential: return Math.Exp(x);
-                    case ForwardFunc.NaturalLog: return Math.Log(x);
-                    case ForwardFunc.None:
-                    default: return x;
-                }
-            }
-            public override double FunctionDifferential(double x)
-            {
-                switch (func)
-                {
-                    case ForwardFunc.Eponential: return Math.Exp(x);
-                    case ForwardFunc.NaturalLog: return (1 / x);
-                    case ForwardFunc.None:
-                    default: return 1;
-                }
-            }
+            Exponential,
+            Linear
         }
 
         public class ActivationLayer : Layer
         {
             public readonly ActivationFunc func;
 
-            public ActivationLayer(int dim, ActivationFunc func) : base(dim)
+            public ActivationLayer(int dim, ActivationFunc func, bool useBias = true) : base(dim, useBias)
             {
                 this.func = func;
             }
@@ -259,6 +216,10 @@ namespace BFLib
                         return Math.Tanh(x);
                     case ActivationFunc.ReLU:
                         return (x > 0) ? x : 0;
+                    case ActivationFunc.NaturalLog:
+                        return Math.Log(x);
+                    case ActivationFunc.Exponential:
+                        return Math.Exp(x);
                     case ActivationFunc.Linear:
                     default: 
                         return x;
@@ -278,6 +239,10 @@ namespace BFLib
                         return 4 / (sqrExp + (1 / sqrExp) + 2);
                     case ActivationFunc.ReLU:
                         return (x > 0) ? 1 : 0;
+                    case ActivationFunc.NaturalLog:
+                        return 1 / x;
+                    case ActivationFunc.Exponential:
+                        return Math.Exp(x);
                     case ActivationFunc.Linear:
                     default: 
                         return 1;
@@ -288,11 +253,14 @@ namespace BFLib
         public class Layer
         {
             public readonly int dim;
-            public double[] biases;
+            public readonly bool useBias;
 
-            public Layer(int dim)
+            double[] biases;
+
+            public Layer(int dim, bool useBias = true)
             {
                 this.dim = dim;
+                this.useBias = useBias;
                 this.biases = new double[dim];
             }
             
@@ -302,10 +270,18 @@ namespace BFLib
                 this.biases = biases;
             }
 
+            public virtual double GetBias(int index) => useBias ? biases[index] : 0;
+
+            public virtual void SetBias(int index, double value) => biases[index] = useBias ? value : 0;
+
             public virtual IEnumerable<double> Forward(double[] inputs)
             {
-                for (int i = 0; i < dim; i++)
-                    yield return ForwardComp(inputs[i] + biases[i]);
+                if (useBias)
+                    for (int i = 0; i < dim; i++)
+                        yield return ForwardComp(inputs[i] + GetBias(i));
+                else
+                    for (int i = 0; i < dim; i++)
+                        yield return ForwardComp(inputs[i]);
             }
 
             public virtual double ForwardComp(double x) => x;
@@ -326,6 +302,78 @@ namespace BFLib
             public abstract IEnumerable<double> Forward(double[] inputs);
 
             public abstract double ForwardComp(double[] inputs, int outputIndex);
+
+            public abstract void AssignForEach(Func<int, int, double, double> value);
+
+            public abstract bool TryGetWeight(int inIndex, int outIndex, out double weight);
+
+            public virtual double GetWeight(int inIndex, int outIndex)
+            {
+                throw new Exception("No weight here bro");
+            }
+        }
+
+        public class ForwardWeightMatrix : IWeightMatrix
+        {
+            public int inDim => dim;
+            public int outDim => dim;
+
+            public readonly int dim;
+
+            public readonly bool useWeights;
+
+            public double[] matrix;
+
+
+            public ForwardWeightMatrix(int dim, bool useWeights = true)
+            {
+                this.dim = dim;
+                this.useWeights = useWeights;
+                this.matrix = new double[inDim];
+            }
+
+            public void AssignForEach(Func<int, int, double, double> value)
+            {
+                if(useWeights)
+                    for (int i = 0; i < dim; i++)
+                        matrix[i] = value(i, i, matrix[i]);
+            }
+
+            public IEnumerable<double> Forward(double[] inputs)
+            {
+                if (useWeights)
+                    for (int i = 0; i < dim; i++)
+                        yield return ForwardComp(inputs, i);
+
+            }
+
+            public double ForwardComp(double[] inputs, int outputIndex)
+            {
+                if (useWeights)
+                    return inputs[outputIndex] * matrix[outputIndex];
+                else
+                    return inputs[outputIndex];
+            }
+
+            public double GetWeight(int inIndex, int outIndex)
+            {
+                if (useWeights && inIndex == outIndex && inIndex < dim)
+                    return matrix[inIndex];
+
+                throw new Exception("No weight here bro");
+            }
+
+            public bool TryGetWeight(int inIndex, int outIndex, out double weight)
+            {
+                if (useWeights && inIndex == outIndex && inIndex < dim)
+                {
+                    weight = matrix[inIndex];
+                    return true;
+                }
+
+                weight = 0;
+                return false;
+            }
         }
 
         public class DenseWeightMatrix : IWeightMatrix
@@ -350,6 +398,21 @@ namespace BFLib
                 this._outDim = matrix.GetLength(0);
 
                 this.matrix = matrix;             // need testing for shallow cloned or not
+            }
+
+            public bool TryGetWeight(int inIndex, int outIndex, out double weight)
+            {
+                weight = matrix[outIndex, inIndex];
+                return true;
+            }
+
+            public double GetWeight(int inIndex, int outIndex) => matrix[outIndex, inIndex];
+
+            public void AssignForEach(Func<int, int, double, double> value)
+            {
+                for (int i = 0; i < outDim; i++)
+                    for (int j = 0; j < inDim; j++)
+                        matrix[i, j] = value(j, i, matrix[i, j]);
             }
 
             public IEnumerable<double> Forward(double[] inputs)
