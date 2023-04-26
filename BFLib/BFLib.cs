@@ -1,4 +1,5 @@
-﻿using System.Buffers;
+﻿using System;
+using System.Buffers;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography.X509Certificates;
@@ -19,7 +20,7 @@ namespace BFLib
                 {
                     builder.NewLayers(dims);
 
-                    Tuple<Layer[], DenseWeightMatrix[]> bundle = builder.Build();
+                    Tuple<Layer[], IWeightMatrix[]> bundle = builder.Build();
 
                     this.layers = bundle.Item1;
                     this.weights = bundle.Item2;
@@ -30,7 +31,7 @@ namespace BFLib
 
             public DenseNeuralNetwork(DenseNeuralNetworkBuilder builder, bool disposeAfterwards = true)
             {
-                Tuple<Layer[], DenseWeightMatrix[]> bundle = builder.Build();
+                Tuple<Layer[], IWeightMatrix[]> bundle = builder.Build();
 
                 this.layers = bundle.Item1;
                 this.weights = bundle.Item2;
@@ -158,20 +159,19 @@ namespace BFLib
 
             public void NewLayer(Layer layer)
             {
-                Layer clone = new Layer(layer.dim);
-
-                for (int i = 0; i < layer.dim; i++)
-                    clone.SetBias(i, layer.GetBias(i));
-
-                layers.Add(clone);
+                layers.Add(layer);
             }
 
-            public Tuple<Layer[], DenseWeightMatrix[]> Build()
+            public Tuple<Layer[], IWeightMatrix[]> Build()
             {
-                DenseWeightMatrix[]  weights = new DenseWeightMatrix[layers.Count - 1];
+                IWeightMatrix[] weights = new IWeightMatrix[layers.Count - 1];
 
-                for (int i = 1; i < layers.Count; i++)
-                    weights[i - 1] = new DenseWeightMatrix(layers[i - 1].dim, layers[i].dim);
+                for (int i = 1; i < layers.Count; i++) {
+                    if (layers[i].useBias)
+                        weights[i - 1] = new DenseWeightMatrix(layers[i - 1].dim, layers[i].dim);
+                    else
+                        weights[i - 1] = new ForwardWeightMatrix(layers[i - 1].dim, false);
+                }
 
                 return (layers.ToArray(), weights).ToTuple();
             }
@@ -184,7 +184,7 @@ namespace BFLib
 
         public interface INeuralNetworkBuilder : IDisposable
         {
-            public abstract Tuple<Layer[], DenseWeightMatrix[]> Build();
+            public abstract Tuple<Layer[], IWeightMatrix[]> Build();
         }
 
         public enum ActivationFunc
@@ -275,13 +275,9 @@ namespace BFLib
             public virtual void SetBias(int index, double value) => biases[index] = useBias ? value : 0;
 
             public virtual IEnumerable<double> Forward(double[] inputs)
-            {
-                if (useBias)
-                    for (int i = 0; i < dim; i++)
-                        yield return ForwardComp(inputs[i] + GetBias(i));
-                else
-                    for (int i = 0; i < dim; i++)
-                        yield return ForwardComp(inputs[i]);
+            { 
+                for (int i = 0; i < dim; i++)
+                    yield return ForwardComp(inputs[i]);
             }
 
             public virtual double ForwardComp(double x) => x;
@@ -305,12 +301,11 @@ namespace BFLib
 
             public abstract void AssignForEach(Func<int, int, double, double> value);
 
+            public abstract bool TrySetWeight(int inIndex, int outIndex, double value);
+
             public abstract bool TryGetWeight(int inIndex, int outIndex, out double weight);
 
-            public virtual double GetWeight(int inIndex, int outIndex)
-            {
-                throw new Exception("No weight here bro");
-            }
+            public abstract double GetWeight(int inIndex, int outIndex);
         }
 
         public class ForwardWeightMatrix : IWeightMatrix
@@ -324,27 +319,27 @@ namespace BFLib
 
             public double[] matrix;
 
-
             public ForwardWeightMatrix(int dim, bool useWeights = true)
             {
                 this.dim = dim;
                 this.useWeights = useWeights;
-                this.matrix = new double[inDim];
+                this.matrix = new double[dim];
             }
 
             public void AssignForEach(Func<int, int, double, double> value)
             {
-                if(useWeights)
-                    for (int i = 0; i < dim; i++)
+                for (int i = 0; i < dim; i++) {
+                    if (useWeights)
                         matrix[i] = value(i, i, matrix[i]);
+                    else
+                        value(i, i, 1);
+                }
             }
 
             public IEnumerable<double> Forward(double[] inputs)
             {
-                if (useWeights)
-                    for (int i = 0; i < dim; i++)
-                        yield return ForwardComp(inputs, i);
-
+                for (int i = 0; i < dim; i++)
+                    yield return ForwardComp(inputs, i);
             }
 
             public double ForwardComp(double[] inputs, int outputIndex)
@@ -357,21 +352,39 @@ namespace BFLib
 
             public double GetWeight(int inIndex, int outIndex)
             {
-                if (useWeights && inIndex == outIndex && inIndex < dim)
-                    return matrix[inIndex];
+                if (useWeights)
+                {
+                    if (inIndex == outIndex && inIndex < dim)
+                        return matrix[inIndex];
+                }
+                else if (inIndex == outIndex)
+                    return 1;
+                else
+                    return 0;
 
                 throw new Exception("No weight here bro");
             }
 
             public bool TryGetWeight(int inIndex, int outIndex, out double weight)
             {
+                if (useWeights)
+                    weight = matrix[inIndex];
+                else if (inIndex == outIndex)
+                    weight = 1;
+                else
+                    weight = 0;
+
+                return inIndex == outIndex && inIndex < dim;
+            }
+
+            public bool TrySetWeight(int inIndex, int outIndex, double value)
+            {
                 if (useWeights && inIndex == outIndex && inIndex < dim)
                 {
-                    weight = matrix[inIndex];
+                    matrix[inIndex] = value;
                     return true;
                 }
 
-                weight = 0;
                 return false;
             }
         }
@@ -429,6 +442,12 @@ namespace BFLib
                     output += matrix[outputIndex, i] * inputs[i];
 
                 return output;
+            }
+
+            public bool TrySetWeight(int inIndex, int outIndex, double value)
+            {
+                matrix[outIndex, inIndex] = value; 
+                return true;
             }
         }
     }
