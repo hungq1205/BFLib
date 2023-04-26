@@ -10,7 +10,7 @@ namespace BFLib
         {
             public readonly int inDim, outDim;
             public readonly Layer[] layers;
-            public readonly DenseWeightMatrix[] weights;
+            public readonly IWeightMatrix[] weights;
 
             public DenseNeuralNetwork(params Layer[] dims)
             {
@@ -196,6 +196,50 @@ namespace BFLib
             Linear
         }
 
+        public enum ForwardFunc
+        {
+            NaturalLog,
+            Eponential,
+            None
+        }
+
+        public class ForwardLayer : Layer
+        {
+            public readonly ForwardFunc func;
+
+            public ForwardLayer(ForwardFunc func, int dim) : base(dim)
+            {
+                this.func = func;
+            }
+
+            public override IEnumerable<double> Forward(double[] inputs)
+            {
+                for (int i = 0; i < dim; i++)
+                    yield return ForwardComp(inputs[i]);
+            }
+
+            public override double ForwardComp(double x)
+            {
+                switch (func)
+                {
+                    case ForwardFunc.Eponential: return Math.Exp(x);
+                    case ForwardFunc.NaturalLog: return Math.Log(x);
+                    case ForwardFunc.None:
+                    default: return x;
+                }
+            }
+            public override double FunctionDifferential(double x)
+            {
+                switch (func)
+                {
+                    case ForwardFunc.Eponential: return Math.Exp(x);
+                    case ForwardFunc.NaturalLog: return (1 / x);
+                    case ForwardFunc.None:
+                    default: return 1;
+                }
+            }
+        }
+
         public class ActivationLayer : Layer
         {
             public readonly ActivationFunc func;
@@ -274,23 +318,36 @@ namespace BFLib
             public static implicit operator Layer(int dim) => new Layer(dim);
         }
 
-        public class DenseWeightMatrix
+        public interface IWeightMatrix
         {
-            public readonly int inDim, outDim;
+            public int inDim { get; }
+            public int outDim { get; }
+
+            public abstract IEnumerable<double> Forward(double[] inputs);
+
+            public abstract double ForwardComp(double[] inputs, int outputIndex);
+        }
+
+        public class DenseWeightMatrix : IWeightMatrix
+        {
+            public int inDim => _inDim;
+            public int outDim => _outDim;
+
+            int _inDim, _outDim;
 
             public double[,] matrix;
 
             public DenseWeightMatrix(int inDim, int outDim)
             {
-                this.inDim = inDim;
-                this.outDim = outDim;
+                this._inDim = inDim;
+                this._outDim = outDim;
                 this.matrix = new double[outDim, inDim];
             }
 
             public DenseWeightMatrix(double[,] matrix)
             {
-                this.inDim = matrix.GetLength(1);
-                this.outDim = matrix.GetLength(0);
+                this._inDim = matrix.GetLength(1);
+                this._outDim = matrix.GetLength(0);
 
                 this.matrix = matrix;             // need testing for shallow cloned or not
             }
