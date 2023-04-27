@@ -166,12 +166,8 @@ namespace BFLib
             {
                 IWeightMatrix[] weights = new IWeightMatrix[layers.Count - 1];
 
-                for (int i = 1; i < layers.Count; i++) {
-                    if (layers[i].useBias)
-                        weights[i - 1] = new DenseWeightMatrix(layers[i - 1].dim, layers[i].dim);
-                    else
-                        weights[i - 1] = new ForwardWeightMatrix(layers[i - 1].dim, false);
-                }
+                for (int i = 1; i < layers.Count; i++)
+                    weights[i - 1] = layers[i].GenerateWeightMatrix(layers[i - 1]);
 
                 return (layers.ToArray(), weights).ToTuple();
             }
@@ -195,6 +191,19 @@ namespace BFLib
             NaturalLog,
             Exponential,
             Linear
+        }
+
+        public class ForwardLayer : ActivationLayer
+        {
+            public ForwardLayer(int dim, ActivationFunc func, bool useBias = true) : base(dim, func, useBias) { }
+
+            public override IWeightMatrix GenerateWeightMatrix(Layer prevLayer)
+            {
+                if (prevLayer.dim == dim)
+                    return new ForwardWeightMatrix(dim, useBias);
+
+                return base.GenerateWeightMatrix(prevLayer);
+            }
         }
 
         public class ActivationLayer : Layer
@@ -286,6 +295,8 @@ namespace BFLib
             /// Get <b>df(bias, x) / dx</b> such <b>x</b> can be another function
             /// </summary>
             public virtual double FunctionDifferential(double x) => 1;
+
+            public virtual IWeightMatrix GenerateWeightMatrix(Layer prevLayer) => new DenseWeightMatrix(prevLayer.dim, dim);
 
             public static implicit operator Layer(int dim) => new Layer(dim);
         }
