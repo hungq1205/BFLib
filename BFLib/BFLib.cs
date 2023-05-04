@@ -58,17 +58,16 @@ namespace BFLib
             /// <summary>
             /// Backpropagates and updates weights, biases
             /// </summary>
-            public void GradientDescent(double[] sampleOutputs, DenseNNForwardResult forwardLog, double learningRate)
+            public void GradientDescent(double[,] sampleOutputs, DenseNNForwardResult forwardLog, double learningRate)
             {
-                double[] errors = new double[sampleOutputs.LongLength];
+                double[,] errors = new double[sampleOutputs.GetLength(0), sampleOutputs.GetLength(1)];
 
                 // Derivative of || 0.5 * (y - h(inputs))^2 ||
-                for (int i = 0; i < sampleOutputs.LongLength; i++)
-                    errors[i] = (forwardLog.outputs[i] - sampleOutputs[i]) * layers[layers.LongLength - 1].FunctionDifferential(forwardLog.layerInputs[layers.LongLength - 1][i] + layers[layers.LongLength - 1].GetBias(i));
-
-                if (layers[layers.LongLength - 1].useBias)
-                    for (int i = 0; i < layers[layers.LongLength - 1].dim; i++)
-                        layers[layers.LongLength - 1].SetBias(i, layers[layers.LongLength - 1].GetBias(i) - learningRate * errors[i]); // bias update
+                for (int sample = 0; sample < sampleOutputs.GetLength(0); sample++)
+                    for (int i = 0; i < sampleOutputs.GetLength(1); i++)
+                    {
+                        errors[sample, i] = (forwardLog.outputs[sample, i] - sampleOutputs[sample, i]) * layers[layers.LongLength - 1].FunctionDifferential(forwardLog.layerInputs[layers.LongLength - 1][sample, i] + layers[layers.LongLength - 1].GetBias(i));
+                    }
 
                 GradientDescentLayers(errors, forwardLog, learningRate, layers.Length - 1);
             }
@@ -78,59 +77,74 @@ namespace BFLib
             /// </summary>
             /// <param name="errors">Error vector of the commencing layer (or <b>fromLayer</b>)</param>
             /// <param name="fromlayer"><i>For recursion purpose only</i>. Going backwards from the given <b>fromLayer</b> index</param>
-            private void GradientDescentLayers(double[] errors, DenseNNForwardResult forwardLog, double learningRate, int fromLayer)
+            private void GradientDescentLayers(double[,] errors, DenseNNForwardResult forwardLog, double learningRate, int fromLayer)
             {
-                if (fromLayer < 1)
+                if (fromLayer > 0)
+                    GradientDescentLayers(
+                        layers[fromLayer].GradientDescent(errors, forwardLog.layerInputs[fromLayer], layers[fromLayer - 1], forwardLog.layerInputs[fromLayer - 1], weights[fromLayer - 1], learningRate),
+                        forwardLog,
+                        learningRate,
+                        fromLayer - 1
+                        );
+                else if (fromLayer == 0)
+                    GradientDescentLayers(
+                        layers[fromLayer].GradientDescent(errors, forwardLog.layerInputs[fromLayer], null, null, null, learningRate),
+                        forwardLog,
+                        learningRate,
+                        fromLayer - 1
+                        );
+                else
                     return;
-
-                double[] layerErrors = new double[layers[fromLayer - 1].dim];
-
-                weights[fromLayer - 1].AssignForEach((inIndex, outIndex, weightValue) =>
-                {
-                    double biasTemp = layers[fromLayer - 1].GetBias(inIndex);
-
-                    // pass-down-error = error * (corresponding weight) * (derivative of (l - 1) layer function with respect to its input)
-                    layerErrors[inIndex] += errors[outIndex] * weightValue * layers[fromLayer - 1].FunctionDifferential(forwardLog.layerInputs[fromLayer - 1][inIndex] + layers[fromLayer - 1].GetBias(inIndex));
-
-                    // weight update
-                    return weightValue - learningRate * errors[outIndex] * layers[fromLayer - 1].ForwardComp(forwardLog.layerInputs[fromLayer - 1][inIndex] + biasTemp);
-                });
-
-                for (int i = 0; i < layers[fromLayer - 1].dim; i++)
-                {
-                    // bias update
-                    if (layers[fromLayer - 1].useBias)
-                        layers[fromLayer - 1].SetBias(i, layers[fromLayer - 1].GetBias(i) - learningRate * layerErrors[i]);
-                }
-
-                GradientDescentLayers(layerErrors, forwardLog, learningRate, fromLayer - 1);
             }
 
             public DenseNNForwardResult Forward(double[] inputs)
             {
-                double[][] layerInputs = new double[layers.LongLength][];
-                double[] outputs = ForwardLayers(inputs, layers.Length - 1, 0, ref layerInputs);
+                double[,] wrapInputs = new double[1, inputs.Length];
+
+                for (int i = 0; i < inputs.Length; i++)
+                    wrapInputs[1, i] = inputs[i];
+
+                double[][,] layerInputs = new double[layers.LongLength][,];
+                double[,] outputs = ForwardLayers(wrapInputs, layers.Length - 1, 0, ref layerInputs);
+
+                return new DenseNNForwardResult(layerInputs, outputs);
+            }
+            
+            public DenseNNForwardResult Forward(double[,] inputs)
+            {
+                double[][,] layerInputs = new double[layers.LongLength][,];
+                double[,] outputs = ForwardLayers(inputs, layers.Length - 1, 0, ref layerInputs);
 
                 return new DenseNNForwardResult(layerInputs, outputs);
             }
 
-            public double[] ForwardLayers(double[] inputs, int toLayer, int fromLayer, ref double[][] layerInputs)
+            double[] ForwardLayers(double[] inputs, int toLayer, int fromLayer, ref double[][] layerInputs)
             {
                 if (fromLayer < toLayer)
-                    layerInputs[toLayer] = weights[toLayer - 1].Forward(ForwardLayers(inputs, toLayer - 1, fromLayer, ref layerInputs)).ToArray();
+                    layerInputs[toLayer] = weights[toLayer - 1].Forward(ForwardLayers(inputs, toLayer - 1, fromLayer, ref layerInputs));
                 else
                     layerInputs[toLayer] = inputs;
 
-                return layers[toLayer].Forward(layerInputs[toLayer]).ToArray();
+                return layers[toLayer].Forward(layerInputs[toLayer]);
+            }
+
+            double[,] ForwardLayers(double[,] inputs, int toLayer, int fromLayer, ref double[][,] layerInputs)
+            {
+                if (fromLayer < toLayer)
+                    layerInputs[toLayer] = weights[toLayer - 1].Forward(ForwardLayers(inputs, toLayer - 1, fromLayer, ref layerInputs));
+                else
+                    layerInputs[toLayer] = inputs;
+
+                return layers[toLayer].Forward(layerInputs[toLayer]);
             }
         }
 
         public class DenseNNForwardResult
         {
-            public double[][] layerInputs;
-            public double[] outputs;
+            public double[][,] layerInputs;
+            public double[,] outputs;
 
-            public DenseNNForwardResult(double[][] layerInputs, double[] outputs) 
+            public DenseNNForwardResult(double[][,] layerInputs, double[,] outputs) 
             {
                 this.layerInputs = layerInputs;
                 this.outputs = outputs;
@@ -190,19 +204,183 @@ namespace BFLib
             Tanh,
             NaturalLog,
             Exponential,
-            Linear
+            Linear,
+            Custom
+        }
+
+        public class BatchNormLayer : ForwardLayer
+        {
+            public double gamma = 1, beta = 0;
+
+            public BatchNormLayer(int dim, ForwardPort port) : base(dim, ActivationFunc.Custom, port, false) { }
+
+            public override double[,] Forward(double[,] inputs)
+            {
+                int sampleSize = inputs.GetLength(0);
+                double[,] result = new double[sampleSize, dim];
+
+                for (int i = 0; i < dim; i++)
+                {
+                    double mean = 0, variance = 0;
+
+                    for (int sample = 0; sample < result.GetLength(0); sample++)
+                        mean += inputs[sample, i];
+                    mean /= sampleSize;
+
+                    for (int sample = 0; sample < result.GetLength(0); sample++)
+                        variance += Math.Pow(inputs[sample, i] - mean, 2);
+                    variance /= sampleSize;
+
+                    for (int sample = 0; sample < result.GetLength(0); sample++)
+                        result[sample, i] = gamma * Standardize(inputs[sample, i], mean, variance) + beta; 
+                }
+
+                return result;
+            }
+
+            public override double ForwardComp(double x)
+            {
+                return x * gamma + beta;
+            }
+
+            public override double[,] GradientDescent(double[,] errors, double[,] layerInputs, Layer? prevLayer, double[,]? prevLayerInputs, IWeightMatrix? prevWeights, double learningRate)
+            {
+                if (prevLayer == null)
+                    return errors;
+
+                int sampleSize = errors.GetLength(0);
+
+                double[,] layerErrors = new double[sampleSize, prevLayer.dim];
+                double[] means = new double[dim];
+                double[] variances = new double[dim];
+
+                for (int i = 0; i < dim; i++)
+                {
+                    for (int sample = 0; sample < sampleSize; sample++)
+                        means[i] += layerInputs[sample, i];
+                    means[i] /= sampleSize;
+
+                    for (int sample = 0; sample < sampleSize; sample++)
+                        variances[i] += Math.Pow(layerInputs[sample, i] - means[i], 2);
+                    variances[i] /= sampleSize - 1;
+                }
+
+                double[] 
+                    dbeta = new double[dim],
+                    dgamma = new double[dim], 
+                    dvariances = new double[dim],
+                    dmeans = new double[dim];
+
+                for (int i = 0; i < dim; i++)
+                {
+                    for (int sample = 0; sample < sampleSize; sample++) 
+                    {
+                        dbeta[i] += errors[sample, i];
+                        dgamma[i] += errors[sample, i] * Standardize(layerInputs[sample, i], means[i], variances[i]);
+
+                        dvariances[i] += errors[sample, i] * (layerInputs[sample, i] - means[i]);
+                        dmeans[i] += errors[sample, i];
+                    }
+
+                    dvariances[i] *= (-0.5d) * gamma * Math.Pow(variances[i], -1.5d);
+
+                    dmeans[i] *= (gamma * sampleSize) / (Math.Sqrt(variances[i]) * dvariances[i] * 2);
+                    // dmeans[i] = (-gamma) / Math.Sqrt(variances[i]); 
+                    // dmeans[i] /= dvariances[i] * (-2) * (1 / sampleSize); 
+
+                    for (int sample = 0; sample < sampleSize; sample++)
+                        dmeans[i] += layerInputs[sample, i] - means[i];
+                    dmeans[i] *= dvariances[i] * (-2);
+                    dmeans[i] /= sampleSize;
+
+                    for (int sample = 0; sample < sampleSize; sample++)
+                        layerErrors[sample, i] =
+                            (errors[sample, i] * gamma) / Math.Sqrt(variances[i]) +
+                            dmeans[i] / sampleSize +
+                            (2 * dvariances[i] * (layerInputs[sample, i] - means[i])) / sampleSize;
+                }
+
+                for (int i = 0; i < dim; i++)
+                {
+                    gamma -= dgamma[i] * learningRate;
+                    beta -= dbeta[i] * learningRate;
+                }
+
+                if (port == ForwardPort.In)
+                    return layerErrors;
+
+                double[,] weightErrors = new double[errors.GetLength(0), prevLayer.dim];
+
+                prevWeights.AssignForEach((inIndex, outIndex, weightValue) =>
+                {
+                    double weightErrorSum = 0;
+
+                    // pass-down-error = error * (corresponding weight) * (derivative of (l - 1) layer function with respect to its input)
+                    for (int sample = 0; sample < prevLayerInputs.GetLength(0); sample++)
+                    {
+                        weightErrors[sample, inIndex] += errors[sample, outIndex] * weightValue * prevLayer.FunctionDifferential(prevLayerInputs[sample, inIndex] + prevLayer.GetBias(inIndex));
+                        weightErrorSum += layerErrors[sample, outIndex] * prevLayer.ForwardComp(prevLayerInputs[sample, inIndex] + prevLayer.GetBias(inIndex));
+                    }
+
+                    // weight update
+                    return weightValue - learningRate * weightErrorSum;
+                });
+
+                return weightErrors;
+            }
+
+            public static double Standardize(double x, double mean, double variance, double zeroSub = 0.00000001) => variance != 0 ? (x - mean) / Math.Sqrt(variance) : (x - mean) / zeroSub;
+
+        }
+
+        public class NormalizationLayer : ForwardLayer
+        {
+            public double gamma, beta;
+
+            public NormalizationLayer(int dim, double min, double max, ForwardPort port) : base(dim, ActivationFunc.Custom, port, false)
+            {
+                gamma = 1 / (max - min);
+                beta = -min;
+            }
+
+            public override double[,] GradientDescent(double[,] errors, double[,] layerInputs, Layer? prevLayer, double[,]? prevLayerInputs, IWeightMatrix? prevWeights, double learningRate)
+            {
+                return errors;
+            }
+
+            public override double ForwardComp(double x)
+            {
+                return x * gamma + beta;
+            }
         }
 
         public class ForwardLayer : ActivationLayer
         {
-            public ForwardLayer(int dim, ActivationFunc func, bool useBias = true) : base(dim, func, useBias) { }
+            public enum ForwardPort
+            {
+                In,
+                Out,
+                Both
+            }
+
+            public readonly ForwardPort port;
+
+            public ForwardLayer(int dim, ActivationFunc func, ForwardPort port, bool useBias = true) : base(dim, func, useBias) 
+            {
+                this.port = port;
+            }
 
             public override IWeightMatrix GenerateWeightMatrix(Layer prevLayer)
             {
-                if (prevLayer.dim == dim)
-                    return new ForwardWeightMatrix(dim, useBias);
-
-                return base.GenerateWeightMatrix(prevLayer);
+                if (port != ForwardPort.Out)
+                {
+                    if (prevLayer.dim == dim)
+                        return new ForwardWeightMatrix(dim, useBias);
+                    else
+                        throw new Exception("Port port In");
+                }
+                else
+                    return new DenseWeightMatrix(prevLayer.dim, dim);
             }
         }
 
@@ -259,7 +437,7 @@ namespace BFLib
             }
         }
 
-        public class Layer
+        public class Layer 
         {
             public readonly int dim;
             public readonly bool useBias;
@@ -281,12 +459,61 @@ namespace BFLib
 
             public virtual double GetBias(int index) => useBias ? biases[index] : 0;
 
-            public virtual void SetBias(int index, double value) => biases[index] = useBias ? value : 0;
+            public virtual void SetBias(int index, double value) => biases[index] = useBias ? value : 0; 
 
-            public virtual IEnumerable<double> Forward(double[] inputs)
-            { 
+            /// <returns>Returns descended errors</returns>
+            public virtual double[,] GradientDescent(double[,] errors, double[,] layerInputs, Layer? prevLayer, double[,]? prevLayerInputs, IWeightMatrix? prevWeights, double learningRate)
+            {
                 for (int i = 0; i < dim; i++)
-                    yield return ForwardComp(inputs[i]);
+                {
+                    // bias update
+                    if (useBias)
+                        for (int sample = 0; sample < errors.GetLength(0); sample++)
+                            SetBias(i, GetBias(i) - learningRate * errors[sample, i]);
+                }
+
+                if (prevWeights == null)
+                    return errors;
+
+                double[,] layerErrors = new double[errors.GetLength(0), prevLayer.dim];
+
+                prevWeights.AssignForEach((inIndex, outIndex, weightValue) =>
+                {
+                    double weightErrorSum = 0;
+
+                    // pass-down-error = error * (corresponding weight) * (derivative of (l - 1) layer function with respect to its input)
+                    for (int sample = 0; sample < prevLayerInputs.GetLength(0); sample++)
+                    {
+                        layerErrors[sample, inIndex] += errors[sample, outIndex] * weightValue * prevLayer.FunctionDifferential(prevLayerInputs[sample, inIndex] + prevLayer.GetBias(inIndex));
+                        weightErrorSum += errors[sample, outIndex] * prevLayer.ForwardComp(prevLayerInputs[sample, inIndex] + prevLayer.GetBias(inIndex));
+                    }
+
+                    // weight update
+                    return weightValue - learningRate * weightErrorSum;
+                });
+
+                return layerErrors;
+            }
+
+            public virtual double[,] Forward(double[,] inputs)
+            {
+                double[,] result = new double[inputs.GetLength(0), dim];
+
+                for (int i = 0; i < inputs.GetLength(0); i++)
+                    for (int j = 0; j < dim; j++)
+                        result[i, j] = ForwardComp(inputs[i, j]);
+
+                return result;
+            }
+
+            public virtual double[] Forward(double[] inputs)
+            {
+                double[] result = new double[dim];
+
+                for (int i = 0; i < dim; i++)
+                    result[i] = ForwardComp(inputs[i]);
+
+                return result;
             }
 
             public virtual double ForwardComp(double x) => x;
@@ -296,7 +523,19 @@ namespace BFLib
             /// </summary>
             public virtual double FunctionDifferential(double x) => 1;
 
-            public virtual IWeightMatrix GenerateWeightMatrix(Layer prevLayer) => new DenseWeightMatrix(prevLayer.dim, dim);
+            public virtual IWeightMatrix GenerateWeightMatrix(Layer prevLayer)
+            {
+                if (prevLayer is ForwardLayer)
+                    if (((ForwardLayer)prevLayer).port != ForwardLayer.ForwardPort.In)
+                    {
+                        if (prevLayer.dim == dim)
+                            return new ForwardWeightMatrix(dim, prevLayer.useBias);
+                        else
+                            throw new Exception("Port port out");
+                    }
+
+                return new DenseWeightMatrix(prevLayer.dim, dim);
+            }
 
             public static implicit operator Layer(int dim) => new Layer(dim);
         }
@@ -306,7 +545,9 @@ namespace BFLib
             public int inDim { get; }
             public int outDim { get; }
 
-            public abstract IEnumerable<double> Forward(double[] inputs);
+            public abstract double[] Forward(double[] inputs);
+
+            public abstract double[,] Forward(double[,] inputs);
 
             public abstract double ForwardComp(double[] inputs, int outputIndex);
 
@@ -347,10 +588,30 @@ namespace BFLib
                 }
             }
 
-            public IEnumerable<double> Forward(double[] inputs)
+            public double[] Forward(double[] inputs)
             {
+                double[] result = new double[dim];
+
                 for (int i = 0; i < dim; i++)
-                    yield return ForwardComp(inputs, i);
+                    result[i] = ForwardComp(inputs, i);
+
+                return result;
+            }
+            
+            public double[,] Forward(double[,] inputs)
+            {
+                double[,] result = new double[inputs.GetLength(0), dim];
+
+                for (int i = 0; i < inputs.GetLength(0); i++)
+                    for (int j = 0; j < dim; j++)
+                    {
+                        if (useWeights)
+                            result[i, j] = inputs[i, j] * matrix[j];
+                        else
+                            result[i, j] = inputs[i, j];
+                    }
+
+                return result;
             }
 
             public double ForwardComp(double[] inputs, int outputIndex)
@@ -439,10 +700,27 @@ namespace BFLib
                         matrix[i, j] = value(j, i, matrix[i, j]);
             }
 
-            public IEnumerable<double> Forward(double[] inputs)
+            public double[] Forward(double[] inputs)
             {
-                for (int i = 0; i < outDim; i++) 
-                    yield return ForwardComp(inputs, i);
+                double[] result = new double[outDim];
+
+                for (int i = 0; i < outDim; i++)
+                    for (int j = 0; j < inDim; j++)
+                        result[i] += inputs[j] * matrix[i, j];
+
+                return result;
+            }
+
+            public double[,] Forward(double[,] inputs)
+            {
+                double[,] result = new double[inputs.GetLength(0), outDim];
+
+                for (int i = 0; i < inputs.GetLength(0); i++)
+                    for (int j = 0; j < outDim; j++)
+                        for (int k = 0; k < inDim; k++)
+                            result[i, j] += inputs[i, k] * matrix[j, k];
+
+                return result;
             }
 
             public double ForwardComp(double[] inputs, int outputIndex)
