@@ -3,6 +3,8 @@ using System.Buffers;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography.X509Certificates;
+using System.IO;
+using System.Data.Common;
 
 namespace BFLib
 {
@@ -737,6 +739,118 @@ namespace BFLib
             {
                 matrix[outIndex, inIndex] = value; 
                 return true;
+            }
+        }
+    }
+
+    namespace Data
+    {
+        public static class UData
+        {
+            public object[][] RetrieveUDataFromCSV(string path, UDataInfo info, out string[] categories)
+            {
+                List<object[]> data = new List<object[]>();
+
+                using (StreamReader reader = new StreamReader(path))
+                {
+                    categories = reader.ReadLine().Split(',');
+
+                    if (info.types.Length != categories.Length)
+                        throw new Exception("type info unmatch");
+
+                    int distinctNum = 0;
+                    foreach (DataType type in info.types)
+                        if (type == DataType.DistinctInt)
+                            distinctNum++;
+
+                    List<string>[] distinctMatches = new List<string>[distinctNum];
+
+                    while (!reader.EndOfStream)
+                    {
+                        string[] rawDataLine = reader.ReadLine().Split(',');
+                        object[] dataLine = new object[rawDataLine.Length];
+
+                        int curDistinct = 0;
+
+                        for(int i = 0; i < rawDataLine.Length; i++)
+                        {
+                            if (string.IsNullOrEmpty(rawDataLine[i]))
+                                continue;
+
+                            switch (info.types[i])
+                            {
+                                case DataType.Int:
+                                    dataLine[i] = int.Parse(rawDataLine[i]); 
+                                    break;
+                                case DataType.Double:
+                                    dataLine[i] = double.Parse(rawDataLine[i]); 
+                                    break;
+                                case DataType.DistinctInt:
+                                    dataLine[i] = double.Parse(rawDataLine[i]); 
+                                    break;
+                                case DataType.String:
+                                default:
+                                    dataLine[i] = rawDataLine[i];
+                                    break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            public string[] GetNotableDifferences(string[] source)
+            {
+
+                for (int i = 0; i < source.Length; i++)
+                {
+
+                }
+            }
+
+            public int GetOrAddDistinctIndex(List<string> source, string target)
+            {
+                for (int i = 0; i < source.Count; i++)
+                {
+                    if (source[i] == target) return i;
+                }
+            }
+        }
+
+        public enum DataType
+        {
+            String,
+            Int,
+            Double,
+            DistinctInt
+        }
+
+        public struct UDataInfo
+        {
+            public DataType[] types;
+            public DistinctIntDataInfo[] distinctData;
+
+            public UDataInfo(DistinctIntDataInfo[] distinctData, params DataType[] types)
+            {
+                this.types = types;
+                this.distinctData = distinctData;
+            }
+
+            public UDataInfo(params DataType[] types)
+            {
+                this.types = types;
+                this.distinctData = new DistinctIntDataInfo[0];
+            }
+        }
+
+        public struct DistinctIntDataInfo
+        {
+            public string category;
+            public string[] encodings;
+
+            public DistinctIntDataInfo(string category, string[] encodings)
+            {
+                this.category = category;
+                this.encodings = encodings;
             }
         }
     }
