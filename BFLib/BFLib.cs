@@ -322,7 +322,7 @@ namespace BFLib
 
                 this.layers = bundle.Item1;
                 this.weights = bundle.Item2;
-                this.optimizer = new SGD(this, learningRate);
+                this.optimizer = new SGD(learningRate);
                 this.inDim = layers[0].dim;
                 this.outDim = layers[layers.LongLength - 1].dim;
 
@@ -331,6 +331,8 @@ namespace BFLib
 
                 foreach (var weight in weights)
                     weight.Build(this);
+
+                optimizer.Init(this);
 
                 if (disposeAfterwards)
                     builder.Dispose();
@@ -351,6 +353,8 @@ namespace BFLib
 
                 foreach (var weight in weights)
                     weight.Build(this);
+
+                optimizer.Init(this);
 
                 if (disposeAfterwards)
                     builder.Dispose();
@@ -522,13 +526,17 @@ namespace BFLib
 
         public abstract class Optimizer
         {
-            public readonly DenseNeuralNetwork network;
+            public DenseNeuralNetwork network;
             public double weightDecay;
 
-            public Optimizer(DenseNeuralNetwork network, double weightDecay = 0)
+            public Optimizer(double weightDecay = 0)
+            {
+                this.weightDecay = weightDecay;
+            }
+
+            public virtual void Init(DenseNeuralNetwork network)
             {
                 this.network = network;
-                this.weightDecay = weightDecay;
             }
 
             public abstract double WeightUpdate(int weightsIndex, int inIndex, int outIndex, double gradient);
@@ -541,9 +549,14 @@ namespace BFLib
             public double learningRate;
             public Dictionary<int, int> bnIndexLookup { get; private set; }
 
-            public SGD(DenseNeuralNetwork net, double learningRate, double weightDecay = 0) : base(net, weightDecay)
+            public SGD(double learningRate, double weightDecay = 0) : base(weightDecay)
             {
                 this.learningRate = learningRate;
+            }
+
+            public override void Init(DenseNeuralNetwork network)
+            {
+                this.network = network;
             }
 
             public override double WeightUpdate(int weightsIndex, int inIndex, int outIndex, double gradient)
@@ -576,9 +589,14 @@ namespace BFLib
             public Dictionary<int, int> bnIndexLookup { get; private set; }
             public double[] accumGammaGrad, accumBetaGrad;
 
-            public AdaGrad(DenseNeuralNetwork network, double weightDecay = 0, double eta = 0.01d) : base(network, weightDecay)
+            public AdaGrad(double weightDecay = 0, double eta = 0.01d) : base(weightDecay)
             {
                 this.eta = eta;
+            }
+
+            public override void Init(DenseNeuralNetwork network)
+            {
+                this.network = network;
 
                 accumulatedWeightGrad = new double[network.weights.Length][][];
                 for (int i = 0; i < network.weights.Length; i++)
