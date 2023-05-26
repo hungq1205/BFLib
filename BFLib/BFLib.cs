@@ -15,7 +15,7 @@ namespace BFLib
 
             public ForwardResult Forward(IForwardInput[] inputs);
 
-            public void GradientDescent(double[][] sampleOutputs, ForwardResult forwardLog, double learningRate);
+            public void GradientDescent(double[][] sampleOutputs, ForwardResult forwardLog);
 
             /// <summary>
             /// </summary>
