@@ -582,8 +582,8 @@ namespace BFLib
 
         public class AdaGrad : Optimizer, IBatchNormOptimizable
         {
-            public double[][][] accumulatedWeightGrad;
-            public double[][] accumulatedBiasGrad;
+            public double[][][] accumWeightGrad;
+            public double[][] accumBiasGrad;
             public double eta;
 
             public Dictionary<int, int> bnIndexLookup { get; private set; }
@@ -598,26 +598,26 @@ namespace BFLib
             {
                 this.network = network;
 
-                accumulatedWeightGrad = new double[network.weights.Length][][];
+                accumWeightGrad = new double[network.weights.Length][][];
                 for (int i = 0; i < network.weights.Length; i++)
                 {
-                    accumulatedWeightGrad[i] = new double[network.weights[i].outDim][];
+                    accumWeightGrad[i] = new double[network.weights[i].outDim][];
                     for (int j = 0; j < network.weights[i].outDim; j++)
                     {
-                        accumulatedWeightGrad[i][j] = new double[network.weights[i].inDim];
+                        accumWeightGrad[i][j] = new double[network.weights[i].inDim];
                         for (int k = 0; k < network.weights[i].inDim; k++)
-                            accumulatedWeightGrad[i][j][k] = 0.000001d; // epsilon = 10^-6
+                            accumWeightGrad[i][j][k] = 0.000001d; // epsilon = 10^-6
                     }
                 }
 
                 bnIndexLookup = new Dictionary<int, int>();
 
-                accumulatedBiasGrad = new double[network.layers.Length][];
+                accumBiasGrad = new double[network.layers.Length][];
                 for (int i = 0; i < network.layers.Length; i++)
                 {
-                    accumulatedBiasGrad[i] = new double[network.layers[i].dim];
+                    accumBiasGrad[i] = new double[network.layers[i].dim];
                     for (int j = 0; j < network.layers[i].dim; j++)
-                        accumulatedBiasGrad[i][j] = 0.000001d; // epsilon = 10^-6
+                        accumBiasGrad[i][j] = 0.000001d; // epsilon = 10^-6
 
                     if (network.layers[i] is BatchNormLayer)
                         bnIndexLookup.Add(i, bnIndexLookup.Count);
@@ -629,16 +629,16 @@ namespace BFLib
 
             public override double WeightUpdate(int weightsIndex, int inIndex, int outIndex, double gradient)
             {
-                accumulatedWeightGrad[weightsIndex][outIndex][inIndex] += gradient * gradient;
+                accumWeightGrad[weightsIndex][outIndex][inIndex] += gradient * gradient;
 
-                return (1 - weightDecay) * network.weights[weightsIndex].GetWeight(inIndex, outIndex) - (eta / Math.Sqrt(accumulatedWeightGrad[weightsIndex][outIndex][inIndex])) * gradient;
+                return (1 - weightDecay) * network.weights[weightsIndex].GetWeight(inIndex, outIndex) - (eta / Math.Sqrt(accumWeightGrad[weightsIndex][outIndex][inIndex])) * gradient;
             }
 
             public override double BiasUpdate(int layerIndex, int perceptron, double gradient)
             {
-                accumulatedBiasGrad[layerIndex][perceptron] += gradient * gradient;
+                accumBiasGrad[layerIndex][perceptron] += gradient * gradient;
 
-                return network.layers[layerIndex].GetBias(perceptron) - (eta / Math.Sqrt(accumulatedBiasGrad[layerIndex][perceptron])) * gradient;
+                return network.layers[layerIndex].GetBias(perceptron) - (eta / Math.Sqrt(accumBiasGrad[layerIndex][perceptron])) * gradient;
             }
 
             public double GammaUpdate(int layerIndex, double gradient)
@@ -653,6 +653,107 @@ namespace BFLib
                 accumBetaGrad[bnIndexLookup[layerIndex]] += gradient * gradient;
 
                 return ((BatchNormLayer)network.layers[layerIndex]).beta - (eta / Math.Sqrt(accumBetaGrad[bnIndexLookup[layerIndex]])) * gradient;
+            }
+        }
+
+        public class AdaDelta : Optimizer, IBatchNormOptimizable
+        {
+            public double[][][] accumWeightGrad, accumRescaledWeightGrad;
+            public double[][] accumBiasGrad, accumRescaledBiasGrad;
+            public double rho;
+
+            public Dictionary<int, int> bnIndexLookup { get; private set; }
+            public double[] accumGammaGrad, accumBetaGrad, accumRescaledGammaGrad, accumRescaledBetaGrad;
+
+            public AdaDelta(double rho = 0.9d, double weightDecay = 0) : base(weightDecay)
+            {
+                this.rho = rho;
+            }
+
+            public override void Init(DenseNeuralNetwork network)
+            {
+                this.network = network;
+
+                accumWeightGrad = new double[network.weights.Length][][];
+                accumRescaledWeightGrad = new double[network.weights.Length][][];
+                for (int i = 0; i < network.weights.Length; i++)
+                {
+                    accumWeightGrad[i] = new double[network.weights[i].outDim][];
+                    accumRescaledWeightGrad[i] = new double[network.weights[i].outDim][];
+                    for (int j = 0; j < network.weights[i].outDim; j++)
+                    {
+                        accumWeightGrad[i][j] = new double[network.weights[i].inDim];
+                        accumRescaledWeightGrad[i][j] = new double[network.weights[i].inDim];
+                        for (int k = 0; k < network.weights[i].inDim; k++)
+                        {
+                            accumWeightGrad[i][j][k] = 0.000001d; // epsilon = 10^-6
+                            accumRescaledWeightGrad[i][j][k] = 0.000001d;
+                        }
+                    }
+                }
+
+                bnIndexLookup = new Dictionary<int, int>();
+
+                accumBiasGrad = new double[network.layers.Length][];
+                accumRescaledBiasGrad = new double[network.layers.Length][];
+                for (int i = 0; i < network.layers.Length; i++)
+                {
+                    accumBiasGrad[i] = new double[network.layers[i].dim];
+                    accumRescaledBiasGrad[i] = new double[network.layers[i].dim];
+                    for (int j = 0; j < network.layers[i].dim; j++)
+                    {
+                        accumBiasGrad[i][j] = 0.000001d; // epsilon = 10^-6
+                        accumRescaledBiasGrad[i][j] = 0.000001d;
+                    }
+
+                    if (network.layers[i] is BatchNormLayer)
+                        bnIndexLookup.Add(i, bnIndexLookup.Count);
+                }
+
+                accumGammaGrad = new double[bnIndexLookup.Count];
+                accumBetaGrad = new double[bnIndexLookup.Count];
+                accumRescaledGammaGrad = new double[bnIndexLookup.Count];
+                accumRescaledBetaGrad = new double[bnIndexLookup.Count];
+            }
+
+            public override double WeightUpdate(int weightsIndex, int inIndex, int outIndex, double gradient)
+            {
+                double rescaledGrad = Math.Sqrt(accumRescaledWeightGrad[weightsIndex][outIndex][inIndex] / accumWeightGrad[weightsIndex][outIndex][inIndex]) * gradient;
+
+                accumWeightGrad[weightsIndex][outIndex][inIndex] = rho * accumWeightGrad[weightsIndex][outIndex][inIndex] + (1 - rho) * gradient * gradient;
+                accumRescaledWeightGrad[weightsIndex][outIndex][inIndex] = rho * accumRescaledWeightGrad[weightsIndex][outIndex][inIndex] + (1 - rho) * rescaledGrad * rescaledGrad;
+
+                return (1 - weightDecay) * network.weights[weightsIndex].GetWeight(inIndex, outIndex) - rescaledGrad;
+            }
+
+            public override double BiasUpdate(int layerIndex, int perceptron, double gradient)
+            {
+                double rescaledGrad = Math.Sqrt(accumRescaledBiasGrad[layerIndex][perceptron] / accumBiasGrad[layerIndex][perceptron]) * gradient;
+
+                accumBiasGrad[layerIndex][perceptron] = rho * accumBiasGrad[layerIndex][perceptron] + (1 - rho) * gradient * gradient;
+                accumRescaledBiasGrad[layerIndex][perceptron] = rho * accumRescaledBiasGrad[layerIndex][perceptron] + (1 - rho) * rescaledGrad * rescaledGrad;
+
+                return network.layers[layerIndex].GetBias(perceptron) - rescaledGrad;
+            }
+
+            public double GammaUpdate(int layerIndex, double gradient)
+            {
+                double rescaledGrad = Math.Sqrt(accumRescaledGammaGrad[bnIndexLookup[layerIndex]] / accumGammaGrad[bnIndexLookup[layerIndex]]) * gradient;
+
+                accumGammaGrad[bnIndexLookup[layerIndex]] = rho * accumGammaGrad[bnIndexLookup[layerIndex]] + (1 - rho) * gradient * gradient;
+                accumRescaledGammaGrad[bnIndexLookup[layerIndex]] = rho * accumRescaledGammaGrad[bnIndexLookup[layerIndex]] + (1 - rho) * rescaledGrad * rescaledGrad;
+
+                return ((BatchNormLayer)network.layers[layerIndex]).gamma - rescaledGrad;
+            }
+
+            public double BetaUpdate(int layerIndex, double gradient)
+            {
+                double rescaledGrad = Math.Sqrt(accumRescaledBetaGrad[bnIndexLookup[layerIndex]] / accumBetaGrad[bnIndexLookup[layerIndex]]) * gradient;
+
+                accumBetaGrad[bnIndexLookup[layerIndex]] = rho * accumBetaGrad[bnIndexLookup[layerIndex]] + (1 - rho) * gradient * gradient;
+                accumRescaledBetaGrad[bnIndexLookup[layerIndex]] = rho * accumRescaledBetaGrad[bnIndexLookup[layerIndex]] + (1 - rho) * rescaledGrad * rescaledGrad;
+
+                return ((BatchNormLayer)network.layers[layerIndex]).beta - rescaledGrad;
             }
         }
 
