@@ -580,7 +580,7 @@ namespace BFLib
             }
         }
 
-        public class AdaGrad : Optimizer
+        public class AdaGrad : Optimizer, IBatchNormOptimizable
         {
             public double[][][] accumulatedWeightGrad;
             public double[][] accumulatedBiasGrad;
@@ -589,7 +589,7 @@ namespace BFLib
             public Dictionary<int, int> bnIndexLookup { get; private set; }
             public double[] accumGammaGrad, accumBetaGrad;
 
-            public AdaGrad(double weightDecay = 0, double eta = 0.01d) : base(weightDecay)
+            public AdaGrad(double eta = 0.01d, double weightDecay = 0) : base(weightDecay)
             {
                 this.eta = eta;
             }
@@ -631,28 +631,28 @@ namespace BFLib
             {
                 accumulatedWeightGrad[weightsIndex][outIndex][inIndex] += gradient * gradient;
 
-                return (1 - weightDecay) * network.weights[weightsIndex].GetWeight(inIndex, outIndex) - (eta / Math.Sqrt(accumulatedWeightGrad[weightsIndex][outIndex][inIndex]));
+                return (1 - weightDecay) * network.weights[weightsIndex].GetWeight(inIndex, outIndex) - (eta / Math.Sqrt(accumulatedWeightGrad[weightsIndex][outIndex][inIndex])) * gradient;
             }
 
             public override double BiasUpdate(int layerIndex, int perceptron, double gradient)
             {
                 accumulatedBiasGrad[layerIndex][perceptron] += gradient * gradient;
 
-                return network.layers[layerIndex].GetBias(perceptron) - (eta / Math.Sqrt(accumulatedBiasGrad[layerIndex][perceptron]));
+                return network.layers[layerIndex].GetBias(perceptron) - (eta / Math.Sqrt(accumulatedBiasGrad[layerIndex][perceptron])) * gradient;
             }
 
             public double GammaUpdate(int layerIndex, double gradient)
             {
                 accumGammaGrad[bnIndexLookup[layerIndex]] += gradient * gradient;
 
-                return ((BatchNormLayer)network.layers[layerIndex]).gamma - (eta / Math.Sqrt(accumGammaGrad[bnIndexLookup[layerIndex]]));
+                return ((BatchNormLayer)network.layers[layerIndex]).gamma - (eta / Math.Sqrt(accumGammaGrad[bnIndexLookup[layerIndex]])) * gradient;
             }
 
             public double BetaUpdate(int layerIndex, double gradient)
             {
                 accumBetaGrad[bnIndexLookup[layerIndex]] += gradient * gradient;
 
-                return ((BatchNormLayer)network.layers[layerIndex]).beta - (eta / Math.Sqrt(accumBetaGrad[bnIndexLookup[layerIndex]]));
+                return ((BatchNormLayer)network.layers[layerIndex]).beta - (eta / Math.Sqrt(accumBetaGrad[bnIndexLookup[layerIndex]])) * gradient;
             }
         }
 
@@ -689,11 +689,11 @@ namespace BFLib
                 {
                     double mean = 0, variance = 0;
 
-                    for (int sample = 0; sample < result.Length; sample++)
+                    for (int sample = 0; sample < sampleSize; sample++)
                         mean += inputs[sample][i];
                     mean /= sampleSize;
 
-                    for (int sample = 0; sample < result.Length; sample++)
+                    for (int sample = 0; sample < sampleSize; sample++)
                         variance += Math.Pow(inputs[sample][i] - mean, 2);
                     variance /= sampleSize;
 
@@ -730,7 +730,7 @@ namespace BFLib
 
                     for (int sample = 0; sample < sampleSize; sample++)
                         variances[i] += Math.Pow(log.layerInputs[layerIndex][sample][i] - means[i], 2);
-                    variances[i] /= sampleSize - 1;
+                    variances[i] /= sampleSize;
                     variances[i] += 0.000001d;
                 }
 
@@ -833,6 +833,8 @@ namespace BFLib
                         dim = network.layers[layerIndex + 1].dim;
                         break;
                 }
+
+                biases = new double[dim];
             }
 
             public override WeightMatrix GenerateWeightMatrix()
@@ -945,19 +947,19 @@ namespace BFLib
             public INeuralNetwork network { get; protected set; }
 
             protected int layerIndex = -1;
-            double[] biases;
+            protected double[] biases;
 
             public Layer(int dim, bool useBias = true)
             {
-                this.network = network;
                 this.dim = dim;
                 this.useBias = useBias;
-                this.biases = new double[dim];
+
+                if (dim != -1)
+                    biases = new double[dim];
             }
             
             public Layer(double[] biases)
             {
-                this.network = network;
                 this.dim = biases.Length;
                 this.biases = biases;
             }
@@ -1228,7 +1230,7 @@ namespace BFLib
                 base.Build(network);
 
                 inDim = network.layers[weightsIndex].dim;
-                inDim = network.layers[weightsIndex + 1].dim;
+                outDim = network.layers[weightsIndex + 1].dim;
 
                 matrix = new double[outDim, inDim];
             }
