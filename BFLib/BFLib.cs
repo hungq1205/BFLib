@@ -711,30 +711,30 @@ namespace BFLib
             {
                 accumWeightGrad[weightsIndex][outIndex][inIndex] =
                     beta * accumWeightGrad[weightsIndex][outIndex][inIndex] +
-                    (1 - beta) * (gradient + weightDecay * network.weights[weightsIndex].GetWeight(inIndex, outIndex));
+                    (1 - beta) * (gradient * gradient + weightDecay * network.weights[weightsIndex].GetWeight(inIndex, outIndex));
 
-                return network.weights[weightsIndex].GetWeight(inIndex, outIndex) - (learningRate / Math.Sqrt(accumWeightGrad[weightsIndex][outIndex][inIndex]));
+                return network.weights[weightsIndex].GetWeight(inIndex, outIndex) - (learningRate * gradient / Math.Sqrt(accumWeightGrad[weightsIndex][outIndex][inIndex]));
             }
 
             public override double BiasUpdate(int layerIndex, int perceptron, double gradient)
             {
-                accumBiasGrad[layerIndex][perceptron] = beta * accumBiasGrad[layerIndex][perceptron] + (1 - beta) * gradient;
+                accumBiasGrad[layerIndex][perceptron] = beta * accumBiasGrad[layerIndex][perceptron] + (1 - beta) * gradient * gradient;
 
-                return network.layers[layerIndex].GetBias(perceptron) - (learningRate / Math.Sqrt(accumBiasGrad[layerIndex][perceptron]));
+                return network.layers[layerIndex].GetBias(perceptron) - (learningRate * gradient / Math.Sqrt(accumBiasGrad[layerIndex][perceptron]));
             }
 
             public double GammaUpdate(int layerIndex, double gradient)
             {
-                accumGammaGrad[bnIndexLookup[layerIndex]] = beta * accumGammaGrad[bnIndexLookup[layerIndex]] + (1 - beta) * gradient;
+                accumGammaGrad[bnIndexLookup[layerIndex]] = beta * accumGammaGrad[bnIndexLookup[layerIndex]] + (1 - beta) * gradient * gradient;
 
-                return ((BatchNormLayer)network.layers[layerIndex]).gamma - (learningRate / Math.Sqrt(accumGammaGrad[bnIndexLookup[layerIndex]]));
+                return ((BatchNormLayer)network.layers[layerIndex]).gamma - (learningRate * gradient / Math.Sqrt(accumGammaGrad[bnIndexLookup[layerIndex]]));
             }
 
             public double BetaUpdate(int layerIndex, double gradient)
             {
-                accumBetaGrad[bnIndexLookup[layerIndex]] = beta * accumBetaGrad[bnIndexLookup[layerIndex]] + (1 - beta) * gradient;
+                accumBetaGrad[bnIndexLookup[layerIndex]] = beta * accumBetaGrad[bnIndexLookup[layerIndex]] + (1 - beta) * gradient * gradient;
 
-                return ((BatchNormLayer)network.layers[layerIndex]).beta - (learningRate / Math.Sqrt(accumBetaGrad[bnIndexLookup[layerIndex]]));
+                return ((BatchNormLayer)network.layers[layerIndex]).beta - (learningRate * gradient / Math.Sqrt(accumBetaGrad[bnIndexLookup[layerIndex]]));
             }
         }
         
@@ -808,7 +808,7 @@ namespace BFLib
 
                 accumWeightGrad[weightsIndex][outIndex][inIndex] =
                     beta2 * accumWeightGrad[weightsIndex][outIndex][inIndex] +
-                    (1 - beta2) * (gradient + weightDecay * network.weights[weightsIndex].GetWeight(inIndex, outIndex));
+                    (1 - beta2) * (gradient * gradient + weightDecay * network.weights[weightsIndex].GetWeight(inIndex, outIndex));
 
                 return network.weights[weightsIndex].GetWeight(inIndex, outIndex) - (learningRate * weightMomentum[weightsIndex][outIndex][inIndex] / Math.Sqrt(accumWeightGrad[weightsIndex][outIndex][inIndex]));
             }
@@ -816,7 +816,7 @@ namespace BFLib
             public override double BiasUpdate(int layerIndex, int perceptron, double gradient)
             {
                 biasMomentum[layerIndex][perceptron] = beta1 * biasMomentum[layerIndex][perceptron] + (1 - beta1) * gradient;
-                accumBiasGrad[layerIndex][perceptron] = beta2 * accumBiasGrad[layerIndex][perceptron] + (1 - beta2) * gradient;
+                accumBiasGrad[layerIndex][perceptron] = beta2 * accumBiasGrad[layerIndex][perceptron] + (1 - beta2) * gradient * gradient;
 
                 return network.layers[layerIndex].GetBias(perceptron) - (learningRate * biasMomentum[layerIndex][perceptron] / Math.Sqrt(accumBiasGrad[layerIndex][perceptron]));
             }
@@ -824,7 +824,7 @@ namespace BFLib
             public double GammaUpdate(int layerIndex, double gradient)
             {
                 gammaMomentum[bnIndexLookup[layerIndex]] = beta1 * gammaMomentum[bnIndexLookup[layerIndex]] + (1 - beta1) * gradient;
-                accumGammaGrad[bnIndexLookup[layerIndex]] = beta2 * accumGammaGrad[bnIndexLookup[layerIndex]] + (1 - beta2) * gradient;
+                accumGammaGrad[bnIndexLookup[layerIndex]] = beta2 * accumGammaGrad[bnIndexLookup[layerIndex]] + (1 - beta2) * gradient * gradient;
 
                 return ((BatchNormLayer)network.layers[layerIndex]).gamma - (learningRate * gammaMomentum[bnIndexLookup[layerIndex]] / Math.Sqrt(accumGammaGrad[bnIndexLookup[layerIndex]]));
             }
@@ -832,7 +832,7 @@ namespace BFLib
             public double BetaUpdate(int layerIndex, double gradient)
             {
                 betaMomentum[bnIndexLookup[layerIndex]] = beta1 * betaMomentum[bnIndexLookup[layerIndex]] + (1 - beta1) * gradient;
-                accumBetaGrad[bnIndexLookup[layerIndex]] = beta2 * accumBetaGrad[bnIndexLookup[layerIndex]] + (1 - beta2) * gradient;
+                accumBetaGrad[bnIndexLookup[layerIndex]] = beta2 * accumBetaGrad[bnIndexLookup[layerIndex]] + (1 - beta2) * gradient * gradient;
 
                 return ((BatchNormLayer)network.layers[layerIndex]).beta - (learningRate * betaMomentum[bnIndexLookup[layerIndex]] / Math.Sqrt(accumBetaGrad[bnIndexLookup[layerIndex]]));
             }
