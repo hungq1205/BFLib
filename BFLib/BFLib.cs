@@ -687,7 +687,7 @@ namespace BFLib
                         for (int k = 0; k < network.weights[i].inDim; k++)
                         {
                             accumWeightGrad[i][j][k] = 0.000001d; // epsilon = 10^-6
-                            accumRescaledWeightGrad[i][j][k] = 0.000001d;
+                            accumRescaledWeightGrad[i][j][k] = 0.0000001d;
                         }
                     }
                 }
@@ -703,12 +703,23 @@ namespace BFLib
                     for (int j = 0; j < network.layers[i].dim; j++)
                     {
                         accumBiasGrad[i][j] = 0.000001d; // epsilon = 10^-6
-                        accumRescaledBiasGrad[i][j] = 0.000001d;
+                        accumRescaledBiasGrad[i][j] = 0.0000001d;
                     }
 
                     if (network.layers[i] is BatchNormLayer)
                         bnIndexLookup.Add(i, bnIndexLookup.Count);
                 }
+
+                bool hasBatchNormLayer = false;
+                foreach (Layer layer in network.layers)
+                    if (layer is BatchNormLayer)
+                    {
+                        hasBatchNormLayer = true;
+                        break;
+                    }
+
+                if (!hasBatchNormLayer)
+                    return;
 
                 accumGammaGrad = new double[bnIndexLookup.Count];
                 accumBetaGrad = new double[bnIndexLookup.Count];
@@ -718,9 +729,9 @@ namespace BFLib
 
             public override double WeightUpdate(int weightsIndex, int inIndex, int outIndex, double gradient)
             {
-                double rescaledGrad = Math.Sqrt(accumRescaledWeightGrad[weightsIndex][outIndex][inIndex] / accumWeightGrad[weightsIndex][outIndex][inIndex]) * gradient;
-
                 accumWeightGrad[weightsIndex][outIndex][inIndex] = rho * accumWeightGrad[weightsIndex][outIndex][inIndex] + (1 - rho) * gradient * gradient;
+
+                double rescaledGrad = Math.Sqrt(accumRescaledWeightGrad[weightsIndex][outIndex][inIndex] / accumWeightGrad[weightsIndex][outIndex][inIndex]) * gradient;
                 accumRescaledWeightGrad[weightsIndex][outIndex][inIndex] = rho * accumRescaledWeightGrad[weightsIndex][outIndex][inIndex] + (1 - rho) * rescaledGrad * rescaledGrad;
 
                 return (1 - weightDecay) * network.weights[weightsIndex].GetWeight(inIndex, outIndex) - rescaledGrad;
@@ -728,9 +739,9 @@ namespace BFLib
 
             public override double BiasUpdate(int layerIndex, int perceptron, double gradient)
             {
-                double rescaledGrad = Math.Sqrt(accumRescaledBiasGrad[layerIndex][perceptron] / accumBiasGrad[layerIndex][perceptron]) * gradient;
-
                 accumBiasGrad[layerIndex][perceptron] = rho * accumBiasGrad[layerIndex][perceptron] + (1 - rho) * gradient * gradient;
+
+                double rescaledGrad = Math.Sqrt(accumRescaledBiasGrad[layerIndex][perceptron] / accumBiasGrad[layerIndex][perceptron]) * gradient;
                 accumRescaledBiasGrad[layerIndex][perceptron] = rho * accumRescaledBiasGrad[layerIndex][perceptron] + (1 - rho) * rescaledGrad * rescaledGrad;
 
                 return network.layers[layerIndex].GetBias(perceptron) - rescaledGrad;
@@ -738,9 +749,9 @@ namespace BFLib
 
             public double GammaUpdate(int layerIndex, double gradient)
             {
-                double rescaledGrad = Math.Sqrt(accumRescaledGammaGrad[bnIndexLookup[layerIndex]] / accumGammaGrad[bnIndexLookup[layerIndex]]) * gradient;
-
                 accumGammaGrad[bnIndexLookup[layerIndex]] = rho * accumGammaGrad[bnIndexLookup[layerIndex]] + (1 - rho) * gradient * gradient;
+
+                double rescaledGrad = Math.Sqrt(accumRescaledGammaGrad[bnIndexLookup[layerIndex]] / accumGammaGrad[bnIndexLookup[layerIndex]]) * gradient;
                 accumRescaledGammaGrad[bnIndexLookup[layerIndex]] = rho * accumRescaledGammaGrad[bnIndexLookup[layerIndex]] + (1 - rho) * rescaledGrad * rescaledGrad;
 
                 return ((BatchNormLayer)network.layers[layerIndex]).gamma - rescaledGrad;
@@ -748,9 +759,9 @@ namespace BFLib
 
             public double BetaUpdate(int layerIndex, double gradient)
             {
-                double rescaledGrad = Math.Sqrt(accumRescaledBetaGrad[bnIndexLookup[layerIndex]] / accumBetaGrad[bnIndexLookup[layerIndex]]) * gradient;
-
                 accumBetaGrad[bnIndexLookup[layerIndex]] = rho * accumBetaGrad[bnIndexLookup[layerIndex]] + (1 - rho) * gradient * gradient;
+
+                double rescaledGrad = Math.Sqrt(accumRescaledBetaGrad[bnIndexLookup[layerIndex]] / accumBetaGrad[bnIndexLookup[layerIndex]]) * gradient;
                 accumRescaledBetaGrad[bnIndexLookup[layerIndex]] = rho * accumRescaledBetaGrad[bnIndexLookup[layerIndex]] + (1 - rho) * rescaledGrad * rescaledGrad;
 
                 return ((BatchNormLayer)network.layers[layerIndex]).beta - rescaledGrad;
@@ -799,7 +810,7 @@ namespace BFLib
                     variance /= sampleSize;
 
                     for (int sample = 0; sample < result.Length; sample++)
-                        result[sample][i] = gamma * Standardize(inputs[sample][i], mean, variance) + beta; 
+                        result[sample][i] = ForwardComp(Standardize(inputs[sample][i], mean, variance)); 
                 }
 
                 return result;
@@ -807,7 +818,7 @@ namespace BFLib
 
             public override double ForwardComp(double x)
             {
-                return x * gamma + beta;
+                return base.ForwardComp(x * gamma + beta);
             }
 
             public override void GradientDescent(ref double[][] errors, ForwardResult result, Optimizer optimizer)
@@ -896,7 +907,7 @@ namespace BFLib
 
             public override double ForwardComp(double x)
             {
-                return x * gamma + beta;
+                return base.ForwardComp(x * gamma + beta);
             }
         }
 
@@ -1092,13 +1103,16 @@ namespace BFLib
 
                 for (int i = 0; i < dim; i++)
                 {
+                    double gradSum = 0;
+
                     // bias update
-                    if (useBias)
-                        for (int sample = 0; sample < errors.Length; sample++)
-                        {
-                            errors[sample][i] *= FunctionDifferential(log.layerInputs[layerIndex][sample][i] + GetBias(i));
-                            SetBias(i, optimizer.BiasUpdate(layerIndex, i, errors[sample][i]));
-                        }
+                    for (int sample = 0; sample < errors.Length; sample++)
+                    {
+                        errors[sample][i] *= FunctionDifferential(log.layerInputs[layerIndex][sample][i] + GetBias(i));
+                        gradSum += errors[sample][i];
+                    }
+
+                    SetBias(i, optimizer.BiasUpdate(layerIndex, i, gradSum));
                 }
             }
 
@@ -1111,7 +1125,7 @@ namespace BFLib
 
                 for (int i = 0; i < inputs.Length; i++)
                     for (int j = 0; j < dim; j++)
-                        result[i][j] = ForwardComp(inputs[i][j]);
+                        result[i][j] = ForwardComp(inputs[i][j] + GetBias(j));
 
                 return result;
             }
@@ -1121,7 +1135,7 @@ namespace BFLib
                 double[] result = new double[dim];
 
                 for (int i = 0; i < dim; i++)
-                    result[i] = ForwardComp(inputs[i]);
+                    result[i] = ForwardComp(inputs[i] + GetBias(i));
 
                 return result;
             }
