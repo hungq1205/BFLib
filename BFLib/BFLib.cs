@@ -1,5 +1,7 @@
 ﻿using System;
-using System.Buffers;
+using System.Collections.Generic;
+using System.Xml;
+using System.Xml.Linq;
 
 namespace BFLib
 {
@@ -2084,6 +2086,627 @@ namespace BFLib
             {
                 this.category = category;
                 this.encodings = encodings;
+            }
+        }
+    }
+
+    namespace Utility
+    {
+        namespace Linear
+        {
+            //public static double[] CGMethod(double[][] A, double[] b, out int iteration, double epsilon = 1E-6)
+            //{
+            //    if (A.Length != A[0].Length || A.Length != b.Length)
+            //        throw new Exception("Invalid Conjugate Gradient Method input dims");
+
+            //    SquareMatrix matrixA = A;
+            //    Vector
+            //        result = new double[A.GetLongLength(0)],
+            //        residual = b, preResidual = Vector.Clone(b),
+            //        direction = residual;
+
+            //    iteration = 1;
+            //    if (Vector.Dot(residual, residual) > epsilon * residual.dim)
+            //    {
+            //        double alpha = Vector.Dot(residual, residual) / Vector.Dot(direction * matrixA, direction);
+
+            //        result += alpha * direction;
+            //        residual -= alpha * matrixA * direction;
+            //    }
+
+            //    while (Vector.Dot(residual, residual) > epsilon * residual.dim)
+            //    {
+            //        iteration++;
+            //        double beta = Vector.Dot(residual, residual) / Vector.Dot(preResidual, preResidual);
+
+            //        direction = residual + beta * direction;
+
+            //        double alpha = Vector.Dot(residual, residual) / Vector.Dot(direction * matrixA, direction);
+
+            //        preResidual.SetTo(residual);
+            //        result += alpha * direction;
+            //        residual -= alpha * matrixA * direction;
+            //    }
+
+            //    return result.content;
+            //}
+
+            public struct SquareMatrix
+            {
+                public double[][] content;
+
+                public readonly int dim => content.Length;
+
+                public SquareMatrix Transpose
+                {
+                    get
+                    {
+                        SquareMatrix result = new SquareMatrix(dim);
+
+                        for (int i = 0; i < dim; i++)
+                            for (int j = 0; j < dim; j++)
+                                result.content[i][j] = content[j][i];
+
+                        return result;
+                    }
+                }
+
+                public SquareMatrix(int dim)
+                {
+                    this.content = new double[dim][];
+
+                    for (int i = 0; i < dim; i++)
+                        content[i] = new double[dim];
+                }
+
+                public SquareMatrix(double[][] content)
+                {
+                    if (content.Length != content[0].Length)
+                        throw new Exception("Invalid square matrix content");
+
+                    this.content = content;
+                }
+
+                public static SquareMatrix Identity(int dim)
+                {
+                    SquareMatrix identity = new SquareMatrix(dim);
+
+                    for (int i = 0; i < dim; i++)
+                        identity.content[i][i] = 1;
+
+                    return identity;
+                }
+
+                public SquareMatrix Invert()
+                {
+                    return AdjugateMatrix() / Determinant();
+                }
+
+                public double Determinant()
+                {
+                    if (dim == 1)
+                        return content[0][0];
+                    else if (dim == 2)
+                        return content[0][0] * content[1][1] - content[1][0] * content[0][1];
+                    else {
+                        double result = 0;
+
+                        for (int i = 0; i < dim; i++)
+                            result += Adjugate(i, 0) * content[i][0];
+
+                        return result;
+                    }
+                }
+
+                public double Adjugate(int row, int col)
+                {
+                    if (dim == 2)
+                        return NegOneRaiseTo(row + col) * content[1 - row][1 - col];
+                    
+                    return Adjugate(new AdjugateSum(row, col), NegOneRaiseTo(row + col));
+                }
+
+                private double Adjugate(AdjugateSum adj, double multiplier, bool coefMultiply = false)
+                {
+                    if (dim - adj.Count == 2)
+                    {
+                        int sum = (dim - 1) * dim / 2;
+                        int row1 = adj.smallestAdjugatableRow, row2 = sum - adj.rowSum - row1,
+                            col1 = adj.smallestAdjugatableCol, col2 = sum - adj.colSum - col1;
+
+                        return multiplier * (content[row1][col1] * content[row2][col2] - content[row1][col2] * content[row2][col1]);
+                    }
+
+                    double result = 0;
+
+                    for (int i = 0; i < dim; i++)
+                    {
+                        int rowSkip = 0;
+                        var node = adj.rows.First;
+                        while (node != null && node.Value < i)
+                        {
+                            node = node.Next;
+                            rowSkip++;
+                        }
+
+                        if (node != null && node.Value == i) 
+                            continue;
+
+                        LinkedListNode<int> rowNode, colNode; 
+
+                        int adjCol = adj.smallestAdjugatableCol, skipCol = adj.skipAdjCol;
+                        adj.Add(i, adjCol, out rowNode, out colNode);
+                        result += Adjugate(adj, NegOneRaiseTo(i - rowSkip + adjCol - skipCol)) * content[i][adjCol];
+                        adj.Remove(rowNode, colNode);
+                    }
+
+                    return result * multiplier;
+                }
+
+                public SquareMatrix AdjugateMatrix()
+                {
+                    SquareMatrix result = new SquareMatrix(dim);
+
+                    for (int i = 0; i < dim; i++)
+                        for (int j = 0; j < dim; j++)
+                            result.content[i][j] = Adjugate(j, i);
+
+                    return result;
+                }
+
+                private int NegOneRaiseTo(int num)
+                {
+                    return num % 2 == 0 ? 1 : -1;
+                }
+
+                public void SetTo(SquareMatrix matrix)
+                {
+                    for (int i = 0; i < dim; i++)
+                        for (int j = 0; j < dim; j++)
+                            content[i][j] = matrix.content[i][j];
+                }
+
+                public SquareMatrix Clone()
+                {
+                    SquareMatrix clone = new SquareMatrix(dim);
+
+                    for (int i = 0; i < dim; i++)
+                        for (int j = 0; j < dim; j++)
+                            clone.content[i][j] = content[i][j];
+
+                    return clone;
+                }
+
+                public static SquareMatrix Clone(double[][] content)
+                {
+                    if (content.Length != content[0].Length)
+                        throw new Exception("Invalid square matrix content");
+
+                    SquareMatrix clone = new SquareMatrix(content.Length);
+
+                    for (int i = 0; i < clone.dim; i++)
+                        for (int j = 0; j < clone.dim; j++)
+                            clone.content[i][j] = content[i][j];
+
+                    return clone;
+                }
+
+                public static double[] Multiply(double[][] matrix, double[] vector)
+                {
+                    if (matrix[0].Length != vector.LongLength)
+                        throw new Exception("Invalid input matrices for matrix multiplication");
+
+                    double[] result = new double[matrix.Length];
+
+                    for (int i = 0; i < matrix.Length; i++)
+                        for (int j = 0; j < matrix[0].Length; j++)
+                            result[i] += matrix[i][j] * vector[j];
+
+                    return result;
+                }
+
+                public static double[] Multiply(double[] vector, double[][] matrix)
+                {
+                    if (matrix.Length != vector.LongLength)
+                        throw new Exception("Invalid input matrices for matrix multiplication");
+
+                    double[] result = new double[matrix[0].Length];
+
+                    for (int i = 0; i < matrix[0].Length; i++)
+                        for (int j = 0; j < matrix.Length; j++)
+                            result[i] += matrix[i][j] * vector[j];
+
+                    return result;
+                }
+
+                public static double[][] Multiply(double[][] a, double[][] b)
+                {
+                    if (a[0].Length != b.Length)
+                        throw new Exception("Invalid input matrices for matrix multiplication");
+
+                    double[][] result = new double[a.Length][];
+                    for (int i = 0; i < a.Length; i++)
+                        result[i] = new double[a[0].Length];
+
+                    for (int row = 0; row < a.Length; row++)
+                        for (int col = 0; col < a.Length; col++)
+                            for (int i = 0; i < a[0].Length; i++)
+                                result[row][col] += a[row][i] * b[i][col];
+
+                    return result;
+                }
+
+                public static double[][] Add(double[][] a, double b)
+                {
+                    double[][] result = new double[a.LongLength][];
+
+                    for (int i = 0; i < a.Length; i++)
+                    {
+                        result[i] = new double[a[0].Length];
+                        for (int j = 0; j < a[0].Length; j++)
+                            result[i][j] = a[i][j] + b;
+                    }
+
+                    return result;
+                }
+
+                public static double[][] Subtract(double[][] a, double b)
+                {
+                    return Add(a, -b);
+                }
+                public static double[][] Subtract(double b, double[][] a)
+                {
+                    double[][] result = new double[a.LongLength][];
+
+                    for (int i = 0; i < a.Length; i++)
+                    {
+                        result[i] = new double[a[0].Length];
+                        for (int j = 0; j < a[0].Length; j++)
+                            result[i][j] = b - a[i][j];
+                    }
+
+                    return result;
+                }
+
+                public static double[][] Multiply(double[][] a, double b)
+                {
+                    double[][] result = new double[a.LongLength][];
+
+                    for (int i = 0; i < a.Length; i++)
+                    {
+                        result[i] = new double[a[0].Length];
+                        for (int j = 0; j < a[0].Length; j++)
+                            result[i][j] = a[i][j] * b;
+                    }
+
+                    return result;
+                }
+
+                public static double[][] Divide(double[][] a, double b)
+                {
+                    double[][] result = new double[a.LongLength][];
+
+                    for (int i = 0; i < a.Length; i++)
+                    {
+                        result[i] = new double[a[0].Length];
+                        for (int j = 0; j < a[0].Length; j++)
+                            result[i][j] = a[i][j] / b;
+                    }
+
+                    return result;
+                }
+
+                public static implicit operator SquareMatrix(double[][] content) => new SquareMatrix(content);
+
+                public static SquareMatrix operator *(SquareMatrix left, SquareMatrix right) => Multiply(left.content, right.content);
+                public static Vector operator *(SquareMatrix left, Vector right) => Multiply(left.content, right.content);
+                public static Vector operator *(Vector left, SquareMatrix right) => Multiply(left.content, right.content);
+
+                public static SquareMatrix operator +(SquareMatrix left, double right) => Add(left.content, right);
+                public static SquareMatrix operator -(SquareMatrix left, double right) => Subtract(left.content, right);
+                public static SquareMatrix operator *(SquareMatrix left, double right) => Multiply(left.content, right);
+                public static SquareMatrix operator /(SquareMatrix left, double right) => Divide(left.content, right);
+
+                public static SquareMatrix operator +(double right, SquareMatrix left) => Add(left.content, right);
+                public static SquareMatrix operator -(double right, SquareMatrix left) => Subtract(right, left.content);
+                public static SquareMatrix operator *(double right, SquareMatrix left) => Multiply(left.content, right);
+
+                public struct AdjugateSum
+                {
+                    public LinkedList<int> rows, cols;
+
+                    public int smallestAdjugatableRow { get; private set; } = 0;
+                    public int smallestAdjugatableCol { get; private set; } = 0;
+                    public int skipAdjCol { get; private set; } = 0;
+                    public int rowSum { get; private set; } = 0;
+                    public int colSum { get; private set; } = 0;
+                    public int Count => rows.Count;
+
+                    public AdjugateSum()
+                    {
+                        rows = new LinkedList<int>();
+                        cols = new LinkedList<int>();
+                    }
+
+                    public AdjugateSum(int row, int col)
+                    {
+                        rows = new LinkedList<int>();
+                        cols = new LinkedList<int>();
+
+                        Add(row, col);
+                    }
+
+                    public void UpdateColSkip()
+                    {
+                        skipAdjCol = 0;
+                        var node = cols.First;
+                        while (node != null && node.Value < smallestAdjugatableCol)
+                        {
+                            node = node.Next;
+                            skipAdjCol++;
+                        }
+                    }
+
+                    public void Remove(LinkedListNode<int> rowNode, LinkedListNode<int> colNode)
+                    {
+                        rowSum -= rowNode.Value;
+                        colSum -= colNode.Value;
+
+                        if (rowNode.Value < smallestAdjugatableRow)
+                            smallestAdjugatableRow = rowNode.Value;
+
+                        if (colNode.Value < smallestAdjugatableCol)
+                            smallestAdjugatableCol = colNode.Value;
+
+                        rows.Remove(rowNode);
+                        cols.Remove(colNode);
+                        UpdateColSkip();
+                    }
+
+                    public void Add(int row, int col)
+                    {
+                        LinkedListNode<int> rowNode, colNode;
+                        Add(row, col, out rowNode, out colNode);
+                    }
+
+                    public void Add(int row, int col, out LinkedListNode<int> rowNode, out LinkedListNode<int> colNode)
+                    {
+                        LinkedListNode<int> node;
+                        rowNode = null;
+                        colNode = null;
+
+                        bool added = false;
+                        node = rows.First;
+                        for (; node != null; node = node.Next)
+                        {
+                            if (node.Value > row)
+                            {
+                                rowSum += row;
+                                rowNode = rows.AddBefore(node, row);
+                                added = true;
+
+                                if (smallestAdjugatableRow < row)
+                                    break;
+                                row++;
+
+                                while (node != null && node.Value == row)
+                                {
+                                    node = node.Next;
+                                    row++;
+                                }
+                                smallestAdjugatableRow = row;
+                                break;
+
+                            }
+                            else if (row == node.Value)
+                                break;
+                        }
+
+                        if (!added)
+                        {
+                            rowSum += row;
+                            rowNode = rows.AddLast(row);
+
+                            if (smallestAdjugatableRow >= row)
+                                smallestAdjugatableRow = row + 1;
+                        }
+
+                        added = false;
+                        node = cols.First;
+                        for (; node != null; node = node.Next)
+                        {
+                            if (node.Value > col)
+                            {
+                                colSum += col;
+                                colNode = cols.AddBefore(node, col);
+                                added = true;
+
+                                if (smallestAdjugatableCol < col)
+                                    break;
+                                col++;
+
+                                while (node != null && node.Value == col)
+                                {
+                                    node = node.Next;
+                                    col++;
+                                }
+                                smallestAdjugatableCol = col;
+                                break;
+
+                            }
+                            else if (col == node.Value)
+                                break;
+                        }
+
+                        if (!added)
+                        {
+                            colSum += col;
+                            colNode = cols.AddLast(col);
+
+                            if (smallestAdjugatableCol >= col)
+                                smallestAdjugatableCol = col + 1;
+                        }
+                        UpdateColSkip();
+                    }
+                }
+            }
+
+            public struct Vector
+            {
+                public double[] content;
+
+                public int dim => content.Length;
+
+                public Vector(double[] content)
+                {
+                    this.content = content;
+                } 
+
+                public Vector(int size)
+                {
+                    this.content = new double[size];
+                }
+
+                public void SetTo(Vector vector)
+                {
+                    for (int i = 0; i < dim; i++)
+                        content[i] = vector.content[i];
+                }
+
+                public Vector Clone()
+                {
+                    Vector clone = new Vector(dim);
+
+                    for (int i = 0; i < dim; i++)
+                        clone.content[i] = content[i];
+
+                    return clone;
+                }
+
+                public static Vector Clone(double[] content)
+                {
+                    Vector clone = new Vector(content.Length);
+
+                    for (int i = 0; i < clone.dim; i++)
+                        clone.content[i] = content[i];
+
+                    return clone;
+                }
+
+                public static double[] Add(double[] a, double[] b)
+                {
+                    if (a.LongLength != b.LongLength)
+                        throw new Exception("Invalid input vectors for dot product");
+
+                    double[] result = new double[a.LongLength];
+
+                    for (int i = 0; i < a.LongLength; i++)
+                        result[i] = a[i] + b[i];
+
+                    return result;
+                }
+
+                public static double[] Add(double[] a, double b)
+                {
+                    double[] result = new double[a.LongLength];
+
+                    for (int i = 0; i < a.LongLength; i++)
+                        result[i] = a[i] + b;
+
+                    return result;
+                }
+
+                public static double[] Add(double b, double[] a)
+                {
+                    double[] result = new double[a.LongLength];
+
+                    for (int i = 0; i < a.LongLength; i++)
+                        result[i] = a[i] + b;
+
+                    return result;
+                }
+
+                public static double[] Subtract(double[] a, double[] b)
+                {
+                    if (a.LongLength != b.LongLength)
+                        throw new Exception("Invalid input vectors for dot product");
+
+                    double[] result = new double[a.LongLength];
+
+                    for (int i = 0; i < a.LongLength; i++)
+                        result[i] = a[i] - b[i];
+
+                    return result;
+                }
+
+                public static double[] Subtract(double[] a, double b)
+                {
+                    double[] result = new double[a.LongLength];
+
+                    for (int i = 0; i < a.LongLength; i++)
+                        result[i] = a[i] - b;
+
+                    return result;
+                }
+
+                public static double[] Subtract(double b, double[] a)
+                {
+                    double[] result = new double[a.LongLength];
+
+                    for (int i = 0; i < a.LongLength; i++)
+                        result[i] = b - a[i];
+
+                    return result;
+                }
+
+                public static double[] Multiply(double[] a, double b)
+                {
+                    double[] result = new double[a.LongLength];
+
+                    for (int i = 0; i < a.LongLength; i++)
+                        result[i] = a[i] * b;
+
+                    return result;
+                }
+
+                public static double[] Divide(double[] a, double b)
+                {
+                    double[] result = new double[a.LongLength];
+
+                    for (int i = 0; i < a.LongLength; i++)
+                        result[i] = a[i] / b;
+
+                    return result;
+                }
+
+                public static double Dot(double[] a, double[] b)
+                {
+                    if (a.LongLength != b.LongLength)
+                        throw new Exception("Invalid input vectors for dot product");
+
+                    double result = 0;
+
+                    for (int i = 0; i < a.LongLength; i++)
+                        result += a[i] * b[i];
+
+                    return result;
+                }
+
+                public static double Dot(Vector a, Vector b) => Dot(a.content, b.content);
+
+                public static implicit operator Vector(double[] content) => new Vector(content);
+
+                public static Vector operator +(Vector a, Vector b) => Add(a.content, b.content);
+                public static Vector operator +(Vector a, double b) => Add(a.content, b);
+                public static Vector operator +(double b, Vector a) => Add(a.content, b);
+
+                public static Vector operator -(Vector a, Vector b) => Subtract(a.content, b.content);
+                public static Vector operator -(Vector a, double b) => Subtract(a.content, b);
+                public static Vector operator -(double b, Vector a) => Subtract(b, a.content);
+
+                public static Vector operator *(Vector a, double b) => Multiply(a.content, b);
+                public static Vector operator *(double b, Vector a) => Multiply(a.content, b);
+                public static Vector operator /(Vector a, double b) => Divide(a.content, b);
             }
         }
     }
