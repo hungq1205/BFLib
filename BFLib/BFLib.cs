@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Xml;
-using System.Xml.Linq;
 
 namespace BFLib
 {
@@ -2094,48 +2092,83 @@ namespace BFLib
     {
         namespace Linear
         {
-            //public static double[] CGMethod(double[][] A, double[] b, out int iteration, double epsilon = 1E-6)
-            //{
-            //    if (A.Length != A[0].Length || A.Length != b.Length)
-            //        throw new Exception("Invalid Conjugate Gradient Method input dims");
+            public static class LinearMethod
+            {
+                public static double[] CGMethod(SquareMatrix A, Vector b, double epsilon = 1E-6)
+                {
+                    if (A.dim != b.dim)
+                        throw new Exception("Invalid Conjugate Gradient Method input dims");
 
-            //    SquareMatrix matrixA = A;
-            //    Vector
-            //        result = new double[A.GetLongLength(0)],
-            //        residual = b, preResidual = Vector.Clone(b),
-            //        direction = residual;
+                    SquareMatrix matrixA = SquareMatrix.Clone(A.content);
+                    Vector
+                        result = new double[A.dim],
+                        residual = Vector.Clone(b.content), preResidual = Vector.Clone(b.content),
+                        direction = Vector.Clone(residual.content);
 
-            //    iteration = 1;
-            //    if (Vector.Dot(residual, residual) > epsilon * residual.dim)
-            //    {
-            //        double alpha = Vector.Dot(residual, residual) / Vector.Dot(direction * matrixA, direction);
+                    if (Vector.Dot(residual, residual) > epsilon * residual.dim)
+                    {
+                        double alpha = Vector.Dot(residual, residual) / Vector.Dot(direction * matrixA, direction);
 
-            //        result += alpha * direction;
-            //        residual -= alpha * matrixA * direction;
-            //    }
+                        result += alpha * direction;
+                        residual -= alpha * matrixA * direction;
+                    }
 
-            //    while (Vector.Dot(residual, residual) > epsilon * residual.dim)
-            //    {
-            //        iteration++;
-            //        double beta = Vector.Dot(residual, residual) / Vector.Dot(preResidual, preResidual);
+                    while (Vector.Dot(residual, residual) > epsilon * residual.dim)
+                    {
+                        double beta = Vector.Dot(residual, residual) / Vector.Dot(preResidual, preResidual);
 
-            //        direction = residual + beta * direction;
+                        direction = residual + beta * direction;
 
-            //        double alpha = Vector.Dot(residual, residual) / Vector.Dot(direction * matrixA, direction);
+                        double alpha = Vector.Dot(residual, residual) / Vector.Dot(direction * matrixA, direction);
 
-            //        preResidual.SetTo(residual);
-            //        result += alpha * direction;
-            //        residual -= alpha * matrixA * direction;
-            //    }
+                        preResidual.SetTo(residual);
+                        result += alpha * direction;
+                        residual -= alpha * matrixA * direction;
+                    }
 
-            //    return result.content;
-            //}
+                    return result.content;
+                }
 
-            public struct SquareMatrix
+                public static double[] RawCGMethod(SquareMatrix A, Vector b, SquareMatrix inverseFactorM, double epsilon = 1E-6)
+                {
+                    if (A.dim != b.dim)
+                        throw new Exception("Invalid Conjugate Gradient Method input dims");
+
+                    SquareMatrix matrixA = SquareMatrix.Clone(A.content);
+                    Vector
+                        result = new double[A.dim],
+                        residual = Vector.Clone(b.content), preResidual = Vector.Clone(b.content),
+                        direction = Vector.Clone(residual.content);
+
+                    if (Vector.Dot(residual, residual) > epsilon * residual.dim)
+                    {
+                        double alpha = Vector.Dot(residual, residual) / Vector.Dot(direction * matrixA, direction);
+
+                        result += alpha * direction;
+                        residual -= alpha * matrixA * direction;
+                    }
+
+                    while (Vector.Dot(residual, residual) > epsilon * residual.dim)
+                    {
+                        double beta = Vector.Dot(residual, residual) / Vector.Dot(preResidual, preResidual);
+
+                        direction = residual + beta * direction;
+
+                        double alpha = Vector.Dot(residual, residual) / Vector.Dot(direction * matrixA, direction);
+
+                        preResidual.SetTo(residual);
+                        result += alpha * direction;
+                        residual -= alpha * matrixA * direction;
+                    }
+
+                    return result.content;
+                }
+            }
+            public class SquareMatrix
             {
                 public double[][] content;
 
-                public readonly int dim => content.Length;
+                public int dim => content.Length;
 
                 public SquareMatrix Transpose
                 {
@@ -2175,6 +2208,16 @@ namespace BFLib
                         identity.content[i][i] = 1;
 
                     return identity;
+                }
+
+                public static SquareMatrix Diag(params double[] nums)
+                {
+                    SquareMatrix matrix = new SquareMatrix(nums.Length);
+
+                    for (int i = 0; i < nums.Length; i++)
+                        matrix.content[i][i] = nums[i];
+
+                    return matrix;
                 }
 
                 public SquareMatrix Invert()
@@ -2551,7 +2594,7 @@ namespace BFLib
                 }
             }
 
-            public struct Vector
+            public class Vector
             {
                 public double[] content;
 
