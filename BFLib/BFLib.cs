@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 
 namespace BFLib
 {
@@ -2162,6 +2163,58 @@ namespace BFLib
                     }
 
                     return result.content;
+                }
+
+                public static SquareMatrix IncompleteLUFac(SquareMatrix A, double epsilon = 1E-3)
+                {
+                    SquareMatrix result = new SquareMatrix(A.dim);
+
+                    for (int row = 0; row < A.dim; row++)
+                        for (int col = 0; col < row + 1; col++)
+                        {
+                            if (A.content[row][col] < epsilon)
+                            {
+                                result.content[row][col] = 0;
+                                continue;
+                            }
+
+                            double sum = 0;
+                            for (int i = 0; i < col; i++)
+                                sum += result.content[row][i] * result.content[col][i];
+
+                            if (col == row)
+                                result.content[row][col] = Math.Sqrt(A.content[row][col] - sum);
+                            else
+                                result.content[row][col] = (A.content[row][col] - sum) / result.content[col][col];
+                        }
+
+                    return result;
+                }
+
+                public static SquareMatrix IncompleteCholeskyFac(SquareMatrix A, double epsilon = 1E-3)
+                {
+                    SquareMatrix result = new SquareMatrix(A.dim);
+
+                    for (int row = 0; row < A.dim; row++)
+                        for (int col = 0; col < row + 1; col++)
+                        {
+                            if (A.content[row][col] < epsilon)
+                            {
+                                result.content[row][col] = 0;
+                                continue;
+                            }
+
+                            double sum = 0;
+                            for (int i = 0; i < col; i++)
+                                sum += result.content[row][i] * result.content[col][i];
+
+                            if (col == row)
+                                result.content[row][col] = Math.Sqrt(A.content[row][col] - sum);
+                            else
+                                result.content[row][col] = (A.content[row][col] - sum) / result.content[col][col];
+                        }
+
+                    return result;
                 }
             }
             public class SquareMatrix
