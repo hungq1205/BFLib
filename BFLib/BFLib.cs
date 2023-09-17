@@ -2167,7 +2167,7 @@ namespace BFLib
                 }
 
                 /// <returns>A tuple of a lower matrix and an upper matrix</returns>
-                public static (SquareMatrix, SquareMatrix) LUFac(SquareMatrix A, double epsilon = 1E-3)
+                public static (SquareMatrix, SquareMatrix) IncompleteLUFac(SquareMatrix A, double epsilon = 1E-3)
                 {
                     SquareMatrix lower = new SquareMatrix(A.dim);
                     SquareMatrix upper = new SquareMatrix(A.dim);
@@ -2175,24 +2175,30 @@ namespace BFLib
                     for (int i = 0; i < A.dim; i++)
                         for (int j = 0; j < i + 1; j++)
                         {
-                            // Row iterate
-                            // j : row index
-                            double rowSum = 0;
-                            for (int k = 0; k < j; k++)
-                                rowSum += lower.content[j][k] * upper.content[k][i];
-                            upper.content[j][i] = A.content[j][i] - rowSum;
-
-                            // Column iterate
-                            // j : column index
-                            if (i == j)
-                                lower.content[i][j] = 1;
-                            else
+                            if (A.content[j][i] > epsilon)
                             {
-                                double colSum = 0;
+                                // Row iterate
+                                // j : row index
+                                double rowSum = 0;
                                 for (int k = 0; k < j; k++)
-                                    colSum += lower.content[i][k] * upper.content[k][j];
+                                    rowSum += lower.content[j][k] * upper.content[k][i];
+                                upper.content[j][i] = A.content[j][i] - rowSum;
+                            }
 
-                                lower.content[i][j] = (A.content[i][j] - colSum) / upper.content[j][j];
+                            if (A.content[i][j] > epsilon)
+                            {
+                                // Column iterate
+                                // j : column index
+                                if (i == j)
+                                    lower.content[i][j] = 1;
+                                else
+                                {
+                                    double colSum = 0;
+                                    for (int k = 0; k < j; k++)
+                                        colSum += lower.content[i][k] * upper.content[k][j];
+
+                                    lower.content[i][j] = (A.content[i][j] - colSum) / upper.content[j][j];
+                                }
                             }
 
                         }
