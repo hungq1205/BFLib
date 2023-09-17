@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Runtime.InteropServices;
 
 namespace BFLib
@@ -2165,30 +2166,38 @@ namespace BFLib
                     return result.content;
                 }
 
-                public static SquareMatrix IncompleteLUFac(SquareMatrix A, double epsilon = 1E-3)
+                /// <returns>A tuple of a lower matrix and an upper matrix</returns>
+                public static (SquareMatrix, SquareMatrix) LUFac(SquareMatrix A, double epsilon = 1E-3)
                 {
-                    SquareMatrix result = new SquareMatrix(A.dim);
+                    SquareMatrix lower = new SquareMatrix(A.dim);
+                    SquareMatrix upper = new SquareMatrix(A.dim);
 
-                    for (int row = 0; row < A.dim; row++)
-                        for (int col = 0; col < row + 1; col++)
+                    for (int i = 0; i < A.dim; i++)
+                        for (int j = 0; j < i + 1; j++)
                         {
-                            if (A.content[row][col] < epsilon)
+                            // Row iterate
+                            // j : row index
+                            double rowSum = 0;
+                            for (int k = 0; k < j; k++)
+                                rowSum += lower.content[j][k] * upper.content[k][i];
+                            upper.content[j][i] = A.content[j][i] - rowSum;
+
+                            // Column iterate
+                            // j : column index
+                            if (i == j)
+                                lower.content[i][j] = 1;
+                            else
                             {
-                                result.content[row][col] = 0;
-                                continue;
+                                double colSum = 0;
+                                for (int k = 0; k < j; k++)
+                                    colSum += lower.content[i][k] * upper.content[k][j];
+
+                                lower.content[i][j] = (A.content[i][j] - colSum) / upper.content[j][j];
                             }
 
-                            double sum = 0;
-                            for (int i = 0; i < col; i++)
-                                sum += result.content[row][i] * result.content[col][i];
-
-                            if (col == row)
-                                result.content[row][col] = Math.Sqrt(A.content[row][col] - sum);
-                            else
-                                result.content[row][col] = (A.content[row][col] - sum) / result.content[col][col];
                         }
 
-                    return result;
+                    return (lower, upper);
                 }
 
                 public static SquareMatrix IncompleteCholeskyFac(SquareMatrix A, double epsilon = 1E-3)
