@@ -2232,43 +2232,31 @@ namespace BFLib
                     return result;
                 }
             }
-            public class SquareMatrix
+
+            public interface IMatrix
             {
-                public double[][] content;
+                public int rowCount { get; }
+                public int colCount { get; }
 
-                public int dim => content.Length;
+                public IMatrix Transpose { get; }
+                public ISquareMatrix ToSquare { get; }
 
-                public SquareMatrix Transpose
+                public IMatrix Instance();
+                public IMatrix InstanceT();
+
+                public double Get(int row, int col);
+                public bool Set(int row, int col, double value);
+
+                public bool SetTo(IMatrix matrix);
+
+                public IMatrix Clone();
+
+                public static int NegOneRaiseTo(int num)
                 {
-                    get
-                    {
-                        SquareMatrix result = new SquareMatrix(dim);
-
-                        for (int i = 0; i < dim; i++)
-                            for (int j = 0; j < dim; j++)
-                                result.content[i][j] = content[j][i];
-
-                        return result;
-                    }
+                    return num % 2 == 0 ? 1 : -1;
                 }
 
-                public SquareMatrix(int dim)
-                {
-                    this.content = new double[dim][];
-
-                    for (int i = 0; i < dim; i++)
-                        content[i] = new double[dim];
-                }
-
-                public SquareMatrix(double[][] content)
-                {
-                    if (content.Length != content[0].Length)
-                        throw new Exception("Invalid square matrix content");
-
-                    this.content = content;
-                }
-
-                public static SquareMatrix Identity(int dim)
+                public static IMatrix Identity(int dim)
                 {
                     SquareMatrix identity = new SquareMatrix(dim);
 
@@ -2278,7 +2266,7 @@ namespace BFLib
                     return identity;
                 }
 
-                public static SquareMatrix Diag(params double[] nums)
+                public static IMatrix Diag(params double[] nums)
                 {
                     SquareMatrix matrix = new SquareMatrix(nums.Length);
 
@@ -2288,49 +2276,63 @@ namespace BFLib
                     return matrix;
                 }
 
-                public SquareMatrix Invert()
+                public Vector Multiply(Vector vector);
+                public Vector LeftMultiply(Vector vector);
+
+                public IMatrix Multiply(IMatrix matrix);
+
+                public IMatrix Add(double value);
+
+                public IMatrix Subtract(double value);
+                public IMatrix LeftSubtract(double value);
+
+                public IMatrix Multiply(double value);
+
+                public IMatrix Divide(double value);
+
+                public static IMatrix operator *(IMatrix A, IMatrix B) => A.Multiply(B);
+                public static Vector operator *(IMatrix matrix, Vector vector) => matrix.Multiply(vector);
+                public static Vector operator *(Vector vector, IMatrix matrix) => matrix.LeftMultiply(vector);
+
+                public static IMatrix operator +(IMatrix matrix, double value) => matrix.Add(value);
+                public static IMatrix operator -(IMatrix matrix, double value) => matrix.Subtract(value);
+                public static IMatrix operator *(IMatrix matrix, double value) => matrix.Multiply(value);
+                public static IMatrix operator /(IMatrix matrix, double value) => matrix.Divide(value);
+
+                public static IMatrix operator +(double value, IMatrix matrix) => matrix.Add(value);
+                public static IMatrix operator -(double value, IMatrix matrix) => matrix.LeftSubtract(value);
+                public static IMatrix operator *(double value, IMatrix matrix) => matrix.Multiply(value);
+            }
+
+            public interface ISquareMatrix : IMatrix
+            {
+                public int dim { get; }
+
+                public ISquareMatrix Invert();
+
+                public double Determinant();
+
+                public double Cofactor(int row, int col);
+
+                public ISquareMatrix Adjugate();
+
+                public static double Cofactor(ISquareMatrix matrix, AdjugateSum adj, double multiplier, bool coefMultiply = false)
                 {
-                    return AdjugateMatrix() / Determinant();
-                }
+                    if (multiplier == 0)
+                        return 0;
 
-                public double Determinant()
-                {
-                    if (dim == 1)
-                        return content[0][0];
-                    else if (dim == 2)
-                        return content[0][0] * content[1][1] - content[1][0] * content[0][1];
-                    else {
-                        double result = 0;
-
-                        for (int i = 0; i < dim; i++)
-                            result += Adjugate(i, 0) * content[i][0];
-
-                        return result;
-                    }
-                }
-
-                public double Adjugate(int row, int col)
-                {
-                    if (dim == 2)
-                        return NegOneRaiseTo(row + col) * content[1 - row][1 - col];
-                    
-                    return Adjugate(new AdjugateSum(row, col), NegOneRaiseTo(row + col));
-                }
-
-                private double Adjugate(AdjugateSum adj, double multiplier, bool coefMultiply = false)
-                {
-                    if (dim - adj.Count == 2)
+                    if (matrix.dim - adj.Count == 2)
                     {
-                        int sum = (dim - 1) * dim / 2;
+                        int sum = (matrix.dim - 1) * matrix.dim / 2;
                         int row1 = adj.smallestAdjugatableRow, row2 = sum - adj.rowSum - row1,
                             col1 = adj.smallestAdjugatableCol, col2 = sum - adj.colSum - col1;
 
-                        return multiplier * (content[row1][col1] * content[row2][col2] - content[row1][col2] * content[row2][col1]);
+                        return multiplier * (matrix.Get(row1, col1) * matrix.Get(row2, col2) - matrix.Get(row1, col2) * matrix.Get(row2, col1));
                     }
 
                     double result = 0;
 
-                    for (int i = 0; i < dim; i++)
+                    for (int i = 0; i < matrix.dim; i++)
                     {
                         int rowSkip = 0;
                         var node = adj.rows.First;
@@ -2340,187 +2342,19 @@ namespace BFLib
                             rowSkip++;
                         }
 
-                        if (node != null && node.Value == i) 
+                        if (node != null && node.Value == i)
                             continue;
 
-                        LinkedListNode<int> rowNode, colNode; 
+                        LinkedListNode<int> rowNode, colNode;
 
                         int adjCol = adj.smallestAdjugatableCol, skipCol = adj.skipAdjCol;
                         adj.Add(i, adjCol, out rowNode, out colNode);
-                        result += Adjugate(adj, NegOneRaiseTo(i - rowSkip + adjCol - skipCol)) * content[i][adjCol];
+                        result += Cofactor(matrix, adj, NegOneRaiseTo(i - rowSkip + adjCol - skipCol)) * matrix.Get(i, adjCol);
                         adj.Remove(rowNode, colNode);
                     }
 
                     return result * multiplier;
                 }
-
-                public SquareMatrix AdjugateMatrix()
-                {
-                    SquareMatrix result = new SquareMatrix(dim);
-
-                    for (int i = 0; i < dim; i++)
-                        for (int j = 0; j < dim; j++)
-                            result.content[i][j] = Adjugate(j, i);
-
-                    return result;
-                }
-
-                private int NegOneRaiseTo(int num)
-                {
-                    return num % 2 == 0 ? 1 : -1;
-                }
-
-                public void SetTo(SquareMatrix matrix)
-                {
-                    for (int i = 0; i < dim; i++)
-                        for (int j = 0; j < dim; j++)
-                            content[i][j] = matrix.content[i][j];
-                }
-
-                public SquareMatrix Clone()
-                {
-                    SquareMatrix clone = new SquareMatrix(dim);
-
-                    for (int i = 0; i < dim; i++)
-                        for (int j = 0; j < dim; j++)
-                            clone.content[i][j] = content[i][j];
-
-                    return clone;
-                }
-
-                public static SquareMatrix Clone(double[][] content)
-                {
-                    if (content.Length != content[0].Length)
-                        throw new Exception("Invalid square matrix content");
-
-                    SquareMatrix clone = new SquareMatrix(content.Length);
-
-                    for (int i = 0; i < clone.dim; i++)
-                        for (int j = 0; j < clone.dim; j++)
-                            clone.content[i][j] = content[i][j];
-
-                    return clone;
-                }
-
-                public static double[] Multiply(double[][] matrix, double[] vector)
-                {
-                    if (matrix[0].Length != vector.LongLength)
-                        throw new Exception("Invalid input matrices for matrix multiplication");
-
-                    double[] result = new double[matrix.Length];
-
-                    for (int i = 0; i < matrix.Length; i++)
-                        for (int j = 0; j < matrix[0].Length; j++)
-                            result[i] += matrix[i][j] * vector[j];
-
-                    return result;
-                }
-
-                public static double[] Multiply(double[] vector, double[][] matrix)
-                {
-                    if (matrix.Length != vector.LongLength)
-                        throw new Exception("Invalid input matrices for matrix multiplication");
-
-                    double[] result = new double[matrix[0].Length];
-
-                    for (int i = 0; i < matrix[0].Length; i++)
-                        for (int j = 0; j < matrix.Length; j++)
-                            result[i] += matrix[i][j] * vector[j];
-
-                    return result;
-                }
-
-                public static double[][] Multiply(double[][] a, double[][] b)
-                {
-                    if (a[0].Length != b.Length)
-                        throw new Exception("Invalid input matrices for matrix multiplication");
-
-                    double[][] result = new double[a.Length][];
-                    for (int i = 0; i < a.Length; i++)
-                        result[i] = new double[a[0].Length];
-
-                    for (int row = 0; row < a.Length; row++)
-                        for (int col = 0; col < a.Length; col++)
-                            for (int i = 0; i < a[0].Length; i++)
-                                result[row][col] += a[row][i] * b[i][col];
-
-                    return result;
-                }
-
-                public static double[][] Add(double[][] a, double b)
-                {
-                    double[][] result = new double[a.LongLength][];
-
-                    for (int i = 0; i < a.Length; i++)
-                    {
-                        result[i] = new double[a[0].Length];
-                        for (int j = 0; j < a[0].Length; j++)
-                            result[i][j] = a[i][j] + b;
-                    }
-
-                    return result;
-                }
-
-                public static double[][] Subtract(double[][] a, double b)
-                {
-                    return Add(a, -b);
-                }
-                public static double[][] Subtract(double b, double[][] a)
-                {
-                    double[][] result = new double[a.LongLength][];
-
-                    for (int i = 0; i < a.Length; i++)
-                    {
-                        result[i] = new double[a[0].Length];
-                        for (int j = 0; j < a[0].Length; j++)
-                            result[i][j] = b - a[i][j];
-                    }
-
-                    return result;
-                }
-
-                public static double[][] Multiply(double[][] a, double b)
-                {
-                    double[][] result = new double[a.LongLength][];
-
-                    for (int i = 0; i < a.Length; i++)
-                    {
-                        result[i] = new double[a[0].Length];
-                        for (int j = 0; j < a[0].Length; j++)
-                            result[i][j] = a[i][j] * b;
-                    }
-
-                    return result;
-                }
-
-                public static double[][] Divide(double[][] a, double b)
-                {
-                    double[][] result = new double[a.LongLength][];
-
-                    for (int i = 0; i < a.Length; i++)
-                    {
-                        result[i] = new double[a[0].Length];
-                        for (int j = 0; j < a[0].Length; j++)
-                            result[i][j] = a[i][j] / b;
-                    }
-
-                    return result;
-                }
-
-                public static implicit operator SquareMatrix(double[][] content) => new SquareMatrix(content);
-
-                public static SquareMatrix operator *(SquareMatrix left, SquareMatrix right) => Multiply(left.content, right.content);
-                public static Vector operator *(SquareMatrix left, Vector right) => Multiply(left.content, right.content);
-                public static Vector operator *(Vector left, SquareMatrix right) => Multiply(left.content, right.content);
-
-                public static SquareMatrix operator +(SquareMatrix left, double right) => Add(left.content, right);
-                public static SquareMatrix operator -(SquareMatrix left, double right) => Subtract(left.content, right);
-                public static SquareMatrix operator *(SquareMatrix left, double right) => Multiply(left.content, right);
-                public static SquareMatrix operator /(SquareMatrix left, double right) => Divide(left.content, right);
-
-                public static SquareMatrix operator +(double right, SquareMatrix left) => Add(left.content, right);
-                public static SquareMatrix operator -(double right, SquareMatrix left) => Subtract(right, left.content);
-                public static SquareMatrix operator *(double right, SquareMatrix left) => Multiply(left.content, right);
 
                 public struct AdjugateSum
                 {
@@ -2660,6 +2494,230 @@ namespace BFLib
                         UpdateColSkip();
                     }
                 }
+            }
+
+            public class DenseMatrix : IMatrix
+            {
+                public double[][] content;
+                public int rowCount => content.Length;
+                public int colCount => content[0].Length;
+
+                public IMatrix Transpose
+                {
+                    get
+                    {
+                        IMatrix result = InstanceT();
+
+                        for (int i = 0; i < colCount; i++)
+                            for (int j = 0; j < rowCount; j++)
+                                result.Set(i, j, Get(j, i));
+
+                        return result;
+                    }
+                }
+
+                public ISquareMatrix ToSquare
+                {
+                    get
+                    {
+                        ISquareMatrix result = new DenseSquareMatrix(rowCount);
+                        result.SetTo(this);
+                        return result;
+                    }
+                }
+
+                public DenseMatrix(int row, int col)
+                {
+                    content = new double[row][];
+
+                    for (int i = 0; i < row; i++)
+                        content[i] = new double[col];
+                }
+
+                public DenseMatrix(double[][] content)
+                {
+                    this.content = content;
+                }
+
+                public IMatrix Instance() => new DenseMatrix(rowCount, colCount);
+
+                public IMatrix InstanceT() => new DenseMatrix(colCount, rowCount);
+
+                public double Get(int row, int col) => content[row][col];
+
+                public bool Set(int row, int col, double value)
+                {
+                    content[row][col] = value;
+                    return true;
+                }
+
+                public bool SetTo(IMatrix matrix)
+                {
+                    for (int i = 0; i < rowCount; i++)
+                        for (int j = 0; j < colCount; j++)
+                            Set(i, j, matrix.Get(i, j));
+
+                    return true;
+                }
+
+                public IMatrix Clone()
+                {
+                    IMatrix result = Instance();
+                    result.SetTo(this);
+
+                    return result;
+                }
+
+                public Vector Multiply(Vector vector)
+                {
+                    if (colCount != vector.dim)
+                        throw new Exception("Invalid input matrices for matrix multiplication");
+
+                    double[] result = new double[rowCount];
+
+                    for (int i = 0; i < rowCount; i++)
+                        for (int j = 0; j < colCount; j++)
+                            result[i] += Get(i, j) * vector.content[j];
+
+                    return result;
+                }
+
+                public Vector LeftMultiply(Vector vector)
+                {
+                    if (rowCount != vector.dim)
+                        throw new Exception("Invalid input matrices for matrix multiplication");
+
+                    double[] result = new double[colCount];
+
+                    for (int i = 0; i < colCount; i++)
+                        for (int j = 0; j < rowCount; j++)
+                            result[i] += Get(i, j) * vector.content[j];
+
+                    return result;
+                }
+
+                public IMatrix Multiply(IMatrix matrix)
+                {
+                    if (colCount != matrix.rowCount)
+                        throw new Exception("Invalid input matrices for matrix multiplication");
+
+                    IMatrix result = new DenseMatrix(rowCount, matrix.colCount);
+
+                    for (int row = 0; row < rowCount; row++)
+                        for (int col = 0; col < matrix.colCount; col++)
+                            for (int i = 0; i < colCount; i++)
+                                result.Set(row, col, result.Get(row, col) + Get(row, i) * matrix.Get(i, col));
+
+                    return result;
+                }
+
+                public IMatrix Add(double value)
+                {
+                    IMatrix result = Instance();
+
+                    for (int i = 0; i < rowCount; i++)
+                        for (int j = 0; j < colCount; j++)
+                            result.Set(i, j, Get(i, j) + value);
+
+                    return result;
+                }
+
+                public IMatrix Subtract(double value)
+                {
+                    return Add(-value);
+                }
+
+                public IMatrix LeftSubtract(double value)
+                {
+                    IMatrix result = Instance();
+
+                    for (int i = 0; i < rowCount; i++)
+                        for (int j = 0; j < colCount; j++)
+                            result.Set(i, j, value - Get(i, j));
+
+                    return result;
+                }
+
+                public IMatrix Multiply(double value)
+                {
+                    IMatrix result = Instance();
+
+                    for (int i = 0; i < rowCount; i++)
+                        for (int j = 0; j < colCount; j++)
+                            result.Set(i, j, Get(i, j) * value);
+
+                    return result;
+                }
+
+                public IMatrix Divide(double value)
+                {
+                    IMatrix result = Instance();
+
+                    for (int i = 0; i < rowCount; i++)
+                        for (int j = 0; j < colCount; j++)
+                            result.Set(i, j, Get(i, j) / value);
+
+                    return result;
+                }
+            }
+
+            public class DenseSquareMatrix : DenseMatrix, ISquareMatrix
+            {
+                public int dim => content.Length;
+
+                public DenseSquareMatrix(int dim) : base(dim, dim) { }
+
+                public DenseSquareMatrix(double[][] content) : base(content)
+                {
+                    if (content.Length != content[0].Length)
+                        throw new Exception("Invalid square matrix content");
+                }
+
+                public ISquareMatrix Invert()
+                {
+                    return (ISquareMatrix)Adjugate().Divide(Determinant());
+                }
+
+                public double Determinant()
+                {
+                    if (dim == 1)
+                        return content[0][0];
+                    else if (dim == 2)
+                        return content[0][0] * content[1][1] - content[1][0] * content[0][1];
+                    else
+                    {
+                        double result = 0;
+
+                        for (int i = 0; i < dim; i++)
+                            result += Cofactor(i, 0) * content[i][0];
+
+                        return result;
+                    }
+                }
+
+                public double Cofactor(int row, int col)
+                {
+                    if (dim == 2)
+                        return IMatrix.NegOneRaiseTo(row + col) * content[1 - row][1 - col];
+
+                    return ISquareMatrix.Cofactor(this, new ISquareMatrix.AdjugateSum(row, col), IMatrix.NegOneRaiseTo(row + col));
+                }
+
+                public ISquareMatrix Adjugate()
+                {
+                    ISquareMatrix result = (ISquareMatrix)Instance();
+
+                    for (int i = 0; i < dim; i++)
+                        for (int j = 0; j < dim; j++)
+                            result.Set(i, j, Cofactor(j, i));
+
+                    return result;
+                }
+            }
+
+            public class DiagonalMatrix : ISquareMatrix
+            {
+
             }
 
             public class Vector
