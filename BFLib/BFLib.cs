@@ -2101,7 +2101,7 @@
                         residual = Vector.Clone(b.content), preResidual = Vector.Clone(b.content),
                         direction = Vector.Clone(residual.content);
 
-                    if (Vector.Dot(residual, residual) > epsilon * residual.dim)
+                    if (Vector.Dot(residual, residual) > epsilon)
                     {
                         double alpha = Vector.Dot(residual, residual) / Vector.Dot(direction * A, direction);
 
@@ -2109,7 +2109,7 @@
                         residual -= alpha * A * direction;
                     }
 
-                    while (Vector.Dot(residual, residual) > epsilon * residual.dim)
+                    while (Vector.Dot(residual, residual) > epsilon)
                     {
                         double beta = Vector.Dot(residual, residual) / Vector.Dot(preResidual, preResidual);
 
@@ -2328,9 +2328,9 @@
                 public static double Cofactor(ISquareMatrix matrix, int row, int col)
                 {
                     if (matrix.dim == 2)
-                        return IMatrix.NegOneRaiseTo(row + col) * matrix.Get(1 - row, 1 - col);
+                        return NegOneRaiseTo(row + col) * matrix.Get(1 - row, 1 - col);
 
-                    return ISquareMatrix.Cofactor(matrix, new ISquareMatrix.AdjugateSum(row, col), IMatrix.NegOneRaiseTo(row + col));
+                    return Cofactor(matrix, new AdjugateSum(row, col), NegOneRaiseTo(row + col));
                 }
 
                 public struct AdjugateSum
@@ -2700,7 +2700,7 @@
 
                     for (int i = 0; i < dim; i++)
                         for (int j = 0; j < dim; j++)
-                            result.Set(i, j, Cofactor(j, i));
+                            result.Set(i, j,  Cofactor(j, i));
 
                     return result;
                 }
@@ -3179,6 +3179,18 @@
                 public double[] content;
 
                 public int dim => content.Length;
+
+                public IMatrix ToMatrix
+                {
+                    get
+                    {
+                        IMatrix result = new DenseMatrix(1, dim);
+                        for (int i = 0; i < dim; i++)
+                            result.Set(0, i, content[i]);
+
+                        return result;
+                    }
+                }
 
                 public Vector(double[] content)
                 {
