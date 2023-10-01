@@ -2132,41 +2132,16 @@ namespace BFLib
                     return result.content;
                 }
 
-                public static Vector RawCGMethod(ISquareMatrix A, Vector b, ISquareMatrix inverseFactorM, double epsilon = 1E-6)
+                public static Vector CGNEMethod(IMatrix A, Vector b, double epsilon = 1E-6)
                 {
-                    if (A.dim != b.dim)
+                    if (A.rowCount != b.dim)
                         throw new Exception("Invalid Conjugate Gradient Method input dims");
+                    IMatrix At = A.Transpose;
 
-                    Vector
-                        result = new double[A.dim],
-                        residual = Vector.Clone(b.content), preResidual = Vector.Clone(b.content),
-                        direction = Vector.Clone(residual.content);
-
-                    if (Vector.Dot(residual, residual) > epsilon * residual.dim)
-                    {
-                        double alpha = Vector.Dot(residual, residual) / Vector.Dot(direction * A, direction);
-
-                        result += alpha * direction;
-                        residual -= alpha * A * direction;
-                    }
-
-                    while (Vector.Dot(residual, residual) > epsilon * residual.dim)
-                    {
-                        double beta = Vector.Dot(residual, residual) / Vector.Dot(preResidual, preResidual);
-
-                        direction = residual + beta * direction;
-
-                        double alpha = Vector.Dot(residual, residual) / Vector.Dot(direction * A, direction);
-
-                        preResidual.SetTo(residual);
-                        result += alpha * direction;
-                        residual -= alpha * A * direction;
-                    }
-
-                    return result.content;
+                    return CGMethod((At * A).ToSquare, At * b, epsilon);
                 }
 
-                /// <returns>A tuple of a lower matrix and an upper matrix respectively</returns>
+                /// <returns>A tuple of a lower matrix and an upper LU factorizations respectively</returns>
                 public static (TriangularMatrix, TriangularMatrix) IncompleteLUFac(ISquareMatrix A, double epsilon = 1E-3)
                 {
                     TriangularMatrix lower = new TriangularMatrix(A.dim, false);
@@ -2206,9 +2181,10 @@ namespace BFLib
                     return (lower, upper);
                 }
 
+                /// <returns>Lower triangular factorization</returns>
                 public static TriangularMatrix IncompleteCholeskyFac(ISquareMatrix A, double epsilon = 1E-3)
                 {
-                    TriangularMatrix result = new TriangularMatrix(A.dim, true);
+                    TriangularMatrix result = new TriangularMatrix(A.dim, false);
 
                     for (int row = 0; row < A.dim; row++)
                         for (int col = 0; col < row + 1; col++)
@@ -2231,7 +2207,7 @@ namespace BFLib
 
                     return result;
                 }
-            }
+            } 
 
             public interface IMatrix
             {
@@ -2502,6 +2478,17 @@ namespace BFLib
                         UpdateColSkip();
                     }
                 }
+
+                public static ISquareMatrix operator *(ISquareMatrix A, ISquareMatrix B) => A.Multiply(B).ToSquare;
+
+                public static ISquareMatrix operator +(ISquareMatrix matrix, double value) => (ISquareMatrix)matrix.Add(value);
+                public static ISquareMatrix operator -(ISquareMatrix matrix, double value) => (ISquareMatrix)matrix.Subtract(value);
+                public static ISquareMatrix operator *(ISquareMatrix matrix, double value) => (ISquareMatrix)matrix.Multiply(value);
+                public static ISquareMatrix operator /(ISquareMatrix matrix, double value) => (ISquareMatrix)matrix.Divide(value);
+
+                public static ISquareMatrix operator +(double value, ISquareMatrix matrix) => (ISquareMatrix)matrix.Add(value);
+                public static ISquareMatrix operator -(double value, ISquareMatrix matrix) => (ISquareMatrix)matrix.LeftSubtract(value);
+                public static ISquareMatrix operator *(double value, ISquareMatrix matrix) => (ISquareMatrix)matrix.Multiply(value);
             }
 
             public class DenseMatrix : IMatrix
