@@ -2089,7 +2089,7 @@
     {
         namespace Linear
         {
-            public static class LinearMethod
+            public static class LinearMethod 
             {
                 public static Vector CGMethod(ISquareMatrix A, Vector b, double epsilon = 1E-6)
                 {
@@ -2202,7 +2202,7 @@
                 }
             } 
 
-            public interface IMatrix
+            public interface IMatrix 
             {
                 public int rowCount { get; }
                 public int colCount { get; }
