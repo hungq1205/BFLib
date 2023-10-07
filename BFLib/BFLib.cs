@@ -1,309 +1,70 @@
-﻿namespace BFLib
+﻿using BFLib.AI.RL;
+using BFLib.Utility;
+using System.Linq;
+
+namespace BFLib
 {
     namespace AI
     {
-        public interface INeuralNetwork
+        public class ForwardResult
         {
-            public int inDim { get; }
-            public int outDim { get; }
-            public Optimizer optimizer { get; }
-            public Layer[] layers { get; }
-            public WeightMatrix[] weights { get; }
-
-            public ForwardResult Forward(IForwardInput[] inputs);
-
-            public void GradientDescent(double[][] sampleOutputs, ForwardResult forwardLog);
-
-            /// <summary>
-            /// </summary>
-            /// <param name="func">Takes current weight as parameter and returns a new weight</param>
-            public void WeightAssignForEach(Func<double, double> func);
-
-            /// <summary>
-            /// </summary>
-            /// <param name="func">Takes current bias as parameter and returns a new bias</param>
-            public void BiasAssignForEach(Func<double, double> func);
-        }
-
-        public abstract class ForwardResult
-        {
-            /// <summary>
-            /// [sample][perceptron]
-            /// </summary>
+            public double[][][] layerInputs;
             public double[][] outputs;
 
-            public ForwardResult(double[][] outputs)
+            public ForwardResult(double[][][] layerInputs, double[][] outputs)
             {
+                this.layerInputs = layerInputs;
                 this.outputs = outputs;
             }
         }
 
-        public class RecurrentForwardResult : ForwardResult
+        public interface INeuralNetwork : IPolicy
         {
-            /// <summary>
-            /// [nodeIndex][layerIndex][sample][perceptron]
-            /// </summary>
-            public double[][][][] layerInputs;
+            int inDim { get; }
+            int outDim { get; }
+            Optimizer optimizer { get; }
+            Layer[] layers { get; }
+            WeightMatrix[] weights { get; }
+            ForwardResult log { get; set; }
 
-            public RecurrentForwardResult(double[][][][] layerInputs, double[][] outputs) : base(outputs)
+            double[] IPolicy.GetActionProbs(double[] obs)
             {
-                this.layerInputs = layerInputs;
+                log = Forward(obs);
+                return log.outputs[0];
             }
-        }
 
-        public class DenseForwardResult : ForwardResult
-        {
-            /// <summary>
-            /// [layerIndex][sample][perceptron]
-            /// </summary>
-            public double[][][] layerInputs;
-
-            public DenseForwardResult(double[][][] layerInputs, double[][] outputs) : base(outputs)
+            void IPolicy.Backward(double[] loss)
             {
-                this.layerInputs = layerInputs;
+                Backward(loss, log);
             }
-        }
 
-        public interface IForwardInput { }
+            ForwardResult Forward(double[] inputs);
 
-        public class DenseForwardInput : IForwardInput
-        {
             /// <summary>
-            /// [inputs]
+            /// Input batch forwarding
             /// </summary>
-            public double[] dense;
+            ForwardResult Forward(double[][] inputs);
 
-            public DenseForwardInput(double[] dense)
-            {
-                this.dense = dense;
-            }
+            /// <summary>
+            /// Backpropagates and updates weights, biases
+            /// </summary>
+            void Backward(double[] loss, ForwardResult forwardLog);
+
+            /// <summary>
+            /// Backpropagates and updates weights, biases in batches
+            /// </summary>
+            void Backward(double[][] loss, ForwardResult forwardLog);
+
+            /// <summary>
+            /// </summary>
+            /// <param name="func">Takes current weight as parameter and returns a new weight</param>
+            void WeightAssignForEach(Func<double, double> func);
+
+            /// <summary>
+            /// </summary>
+            /// <param name="func">Takes current bias as parameter and returns a new bias</param>
+            void BiasAssignForEach(Func<double, double> func);
         }
-
-        //public class RecurrentForwardInput : IForwardInput
-        //{
-        //    /// <summary>
-        //    /// [nodeIndex][inputs]
-        //    /// </summary>
-        //    public double[][] recurrent;
-
-        //    public RecurrentForwardInput(double[][] recurrent)
-        //    {
-        //        this.recurrent = recurrent;
-        //    }
-        //}
-
-        //public class RecurrentNeuralNetwork : INeuralNetwork
-        //{
-        //    public int inDim { get; private set; }
-        //    public int outDim { get; private set; }
-        //    public Optimizer optimizer { get; private set; }
-        //    public Layer[] layers { get; private set; }
-        //    public WeightMatrix[] weights { get; private set; }
-
-        //    public readonly int nodeCount, hiddenDim;
-        //    public readonly ActivationFunc outFunc, hiddenFunc;
-        //    public readonly double[] outBiases;
-        //    public readonly WeightMatrix[] outWeights;
-
-        //    public RecurrentNeuralNetwork(int nodeCount, int inDim, int outDim, int hiddenDim = 1, ActivationFunc outFunc = ActivationFunc.Linear, ActivationFunc hiddenFunc = ActivationFunc.Tanh) : base()
-        //    {
-        //        if (outDim > nodeCount)
-        //            throw new Exception("No RNN for u");
-
-        //        this.inDim = inDim;
-        //        this.outDim = outDim;
-        //        this.nodeCount = nodeCount;
-        //        this.hiddenDim = hiddenDim;
-        //        this.outFunc = outFunc;
-        //        this.hiddenFunc = hiddenFunc;
-
-        //        layers = new Layer[nodeCount];
-        //        weights = new WeightMatrix[nodeCount];
-        //        outBiases = new double[outDim];
-        //        outWeights = new WeightMatrix[outDim];
-
-        //        for (int i = 0; i < nodeCount; i++)
-        //        {
-        //            layers[i] = new Layer(hiddenDim);
-        //            weights[i] = new DenseWeightMatrix(hiddenDim + inDim, hiddenDim);
-        //        }
-
-        //        for (int i = 0; i < outDim; i++)
-        //            outWeights[i] = new DenseWeightMatrix(hiddenDim, 1);
-        //    }
-
-        //    public void WeightAssignForEach(Func<double, double> func)
-        //    {
-        //        for (int i = 0; i < weights.LongLength; i++)
-        //            weights[i].AssignForEach((inIndex, outIndex, weight) => func(weight));
-
-        //        for (int i = 0; i < outWeights.LongLength; i++)
-        //            outWeights[i].AssignForEach((inIndex, outIndex, weight) => func(weight));
-        //    }
-
-        //    public void BiasAssignForEach(Func<double, double> func)
-        //    {
-        //        for (int i = 0; i < layers.LongLength; i++)
-        //            for (int j = 0; j < layers[i].dim; j++)
-        //                layers[i].SetBias(j, func(layers[i].GetBias(j)));
-
-        //        for (int i = 0; i < outBiases.Length; i++)
-        //            outBiases[i] = func(outBiases[i]);
-        //    }
-
-        //    public void GradientDescent(double[][] sampleOutputs, ForwardResult forwardLog, double learningRate)
-        //    {
-        //        if (!(forwardLog is RecurrentForwardResult))
-        //            throw new Exception("hell nah");
-
-        //        RecurrentForwardResult log = (RecurrentForwardResult)forwardLog;
-
-        //        double[][] errors = new double[sampleOutputs.Length][];
-
-        //        // Derivative of || 0.5 * (y - h(inputs))^2 ||
-        //        for (int sample = 0; sample < sampleOutputs.Length; sample++)
-        //        {
-        //            errors[sample] = new double[sampleOutputs[0].Length];
-
-        //            for (int i = 0; i < sampleOutputs[0].Length; i++)
-        //            {
-        //                errors[sample][i] = (log.outputs[sample][i] - sampleOutputs[sample][i]) * ActivationLayer.ActivationDifferential(outFunc, log.layerInputs[nodeCount - outDim + i][2][sample][0] + outBiases[i]);
-        //            }
-        //        }
-
-        //        GradientDescentLayers(errors, new double[errors.Length][], log, learningRate, nodeCount - 1);
-        //    }
-
-        //    /// <summary>
-        //    /// <i>For recursion purpose only</i>. Backpropagates and updates specified layers
-        //    /// </summary>
-        //    /// <param name="errors">Error vector of the commencing layer (or <b>fromLayer</b>) with [sample][outIndex]</param>
-        //    /// <param name="fromlayer"><i>For recursion purpose only</i>. Going backwards from the given <b>fromLayer</b> index</param>
-        //    private void GradientDescentLayers(double[][] errors, double[][] hiddenErrors, RecurrentForwardResult forwardLog, double learningRate, int fromNode)
-        //    {
-        //        if (fromNode < 0)
-        //            return;
-        //        else if (fromNode == nodeCount - 1)
-        //            for (int i = 0; i < errors.Length; i++)
-        //                hiddenErrors[i] = new double[hiddenDim];
-
-        //        int outNodeIndex = fromNode - (nodeCount - outDim);
-
-        //        if (outNodeIndex >= 0)
-        //        {
-        //            for (int i = 0; i < errors.Length; i++) {
-        //                double outBiasTemp = outBiases[outNodeIndex];
-        //                outBiases[outNodeIndex] -= errors[i][outNodeIndex] * learningRate;
-        //                outWeights[outNodeIndex].AssignForEach(
-        //                    (inIndex, outIndex, weight) =>
-        //                    {
-        //                        hiddenErrors[i][inIndex] += ActivationLayer.ActivationDifferential(outFunc, forwardLog.layerInputs[fromNode][2][i][0] + outBiasTemp) * weight;
-        //                        hiddenErrors[i][inIndex] *= ActivationLayer.ActivationDifferential(hiddenFunc, forwardLog.layerInputs[fromNode][1][i][inIndex] + layers[fromNode].GetBias(inIndex));
-        //                        layers[fromNode].SetBias(inIndex, 
-        //                            layers[fromNode].GetBias(inIndex) - 
-        //                            learningRate * 
-        //                            hiddenErrors[i][inIndex]);
-
-        //                        return (1 - weightDecay) * weight -
-        //                        errors[i][outNodeIndex] *
-        //                        ActivationLayer.ActivationDifferential(outFunc, forwardLog.layerInputs[fromNode][2][i][0] + outBiasTemp) *
-        //                        layers[fromNode].ForwardComp(forwardLog.layerInputs[fromNode][1][i][inIndex] + layers[fromNode].GetBias(inIndex)) *
-        //                        learningRate;
-        //                    });
-        //            }
-        //        }
-
-        //        for (int i = 0; i < errors.Length; i++)
-        //        {
-        //            double[] weightAccum = new double[hiddenDim];
-        //            weights[fromNode].AssignForEach(
-        //                (inIndex, outIndex, weight) =>
-        //                {
-        //                    if(inIndex < hiddenDim)
-        //                        weightAccum[inIndex] += weight;
-
-        //                    return (1 - weightDecay) * weight -
-        //                    hiddenErrors[i][outIndex] *
-        //                    forwardLog.layerInputs[fromNode][0][i][inIndex] *
-        //                    learningRate;
-        //                });
-        //            for(int j = 0; j < hiddenDim; j++)
-        //                hiddenErrors[i][j] *= weightAccum[j];
-        //        }
-
-        //        GradientDescentLayers(errors, hiddenErrors, forwardLog, learningRate, fromNode - 1);
-        //    }
-
-        //    // layerIndex : {
-        //    //      0: inputs,
-        //    //      1: hidden,
-        //    //      2: outputs
-        //    // }
-        //    // layerInputs = [nodeIndex][layerIndex][sample][perceptron]
-        //    // inputs = [sample][nodeIndex][inputs]
-        //    public ForwardResult Forward(IForwardInput[] inputs)
-        //    {
-        //        double[][][][] log = new double[nodeCount][][][];
-        //        double[][] result = new double[inputs.Length][];
-
-        //        for (int i = 0; i < nodeCount; i++)
-        //        {
-        //            if (i < nodeCount - outDim)
-        //                log[i] = new double[2][][];
-        //            else
-        //                log[i] = new double[3][][];
-
-        //            for (int j = 0; j < log[i].Length; j++)
-        //                log[i][j] = new double[inputs.Length][];
-        //        }
-
-        //        for(int i = 0; i < inputs.Length; i++)
-        //            result[i] = Forward(((RecurrentForwardInput)inputs[i]).recurrent, ref log, i);
-
-        //        return new RecurrentForwardResult(log, result);
-        //    }
-
-        //    // layerIndex : {
-        //    //      0: inputs,
-        //    //      1: hidden,
-        //    //      2: outputs
-        //    // }
-        //    // layerInputs = [nodeIndex][layerIndex][sample = 1][perceptron]
-        //    // inputs = [NodeIndex][inputs]
-        //    public double[] Forward(double[][] inputs, ref double[][][][] layerInputs, int logSampleIndex = 0)
-        //    {
-        //        layerInputs[0][0][logSampleIndex] = new double[hiddenDim + inDim];
-        //        for (int j = hiddenDim; j < hiddenDim + inDim; j++)
-        //            layerInputs[0][0][logSampleIndex][j] = inputs[0][j - hiddenDim];
-
-        //        layerInputs[0][1][logSampleIndex] = weights[0].Forward(layerInputs[0][0][logSampleIndex]);
-
-        //        for (int i = 1; i < nodeCount; i++)
-        //        {
-        //            layerInputs[i][0][logSampleIndex] = new double[hiddenDim + inDim];
-
-        //            for (int j = 0; j < hiddenDim; j++)
-        //                layerInputs[i][0][logSampleIndex][j] = ActivationLayer.ForwardActivation(hiddenFunc, layers[i - 1].ForwardComp(layerInputs[i - 1][1][logSampleIndex][j] + layers[i - 1].GetBias(j)));
-        //            for (int j = hiddenDim; j < hiddenDim + inDim; j++)
-        //                layerInputs[i][0][logSampleIndex][j] = inputs[i][j - hiddenDim];
-
-        //            layerInputs[i][1][logSampleIndex] = weights[i].Forward(layerInputs[i][0][logSampleIndex]);
-
-        //            if (i >= nodeCount - outDim)
-        //            {
-        //                layerInputs[i][2][logSampleIndex] = new double[1];
-        //                layerInputs[i][2][logSampleIndex] = outWeights[i - (nodeCount - outDim)].Forward(layers[i].Forward(layerInputs[i][1][logSampleIndex]));
-        //            }
-        //        }
-
-        //        double[] result = new double[outDim];
-
-        //        for (int i = 0; i < outDim; i++)
-        //            result[i] = ActivationLayer.ForwardActivation(outFunc, layerInputs[i + (nodeCount - outDim)][2][0][0] + outBiases[i]);
-
-        //        return result;
-        //    }
-        //}
 
         public class DenseNeuralNetwork : INeuralNetwork
         {
@@ -312,6 +73,8 @@
             public Optimizer optimizer { get; private set; }
             public Layer[] layers { get; private set; }
             public WeightMatrix[] weights { get; private set; }
+
+            public ForwardResult log { get; set; }
 
             public DenseNeuralNetwork(DenseNeuralNetworkBuilder builder, double learningRate, bool disposeAfterwards = true) : base()
             {
@@ -370,63 +133,57 @@
                         layers[i].SetBias(j, func(layers[i].GetBias(j)));
             }
 
-            /// <summary>
-            /// Backpropagates and updates weights, biases
-            /// </summary>
-            public void GradientDescent(double[][] sampleOutputs, ForwardResult forwardLog)
+            public void Backward(double[] loss, ForwardResult forwardLog)
             {
-                if (!(forwardLog is DenseForwardResult))
-                    throw new Exception("hell nah");
+                double[][] temp = new double[1][];
+                temp[0] = loss;
 
-                DenseForwardResult log = (DenseForwardResult)forwardLog;
-
-                double[][] errors = new double[sampleOutputs.Length][];
-
-                // Derivative of || 0.5 * (y - h(inputs))^2 ||
-                for (int sample = 0; sample < sampleOutputs.Length; sample++)
-                {
-                    errors[sample] = new double[sampleOutputs[0].Length];
-
-                    for (int i = 0; i < sampleOutputs[0].Length; i++)
-                        errors[sample][i] = log.outputs[sample][i] - sampleOutputs[sample][i];
-                }
-
-                layers[layers.Length - 1].GradientDescent(ref errors, forwardLog, optimizer);
+                layers[layers.Length - 1].GradientDescent(ref temp, forwardLog, optimizer);
 
                 for (int i = layers.Length - 2; i > -1; i--)
                 {
-                    weights[i].GradientDescent(ref errors, forwardLog, optimizer);
-                    layers[i].GradientDescent(ref errors, forwardLog, optimizer);
+                    weights[i].GradientDescent(ref temp, forwardLog, optimizer);
+                    layers[i].GradientDescent(ref temp, forwardLog, optimizer);
                 }
             }
 
-            public DenseForwardResult Forward(double[] inputs)
+            public void Backward(double[][] loss, ForwardResult forwardLog)
             {
-                double[][] wrapInputs = new double[1][];
-                wrapInputs[0] = inputs;
+                layers[layers.Length - 1].GradientDescent(ref loss, forwardLog, optimizer);
 
-                double[][][] layerInputs = new double[layers.LongLength][][];
-                double[][] outputs = ForwardLayers(wrapInputs, layers.Length - 1, 0, ref layerInputs);
-
-                return new DenseForwardResult(layerInputs, outputs);
+                for (int i = layers.Length - 2; i > -1; i--)
+                {
+                    weights[i].GradientDescent(ref loss, forwardLog, optimizer);
+                    layers[i].GradientDescent(ref loss, forwardLog, optimizer);
+                }
             }
 
-            public ForwardResult Forward(IForwardInput[] inputs)
+            public ForwardResult Forward(double[] inputs)
+            {
+                double[][][] layerInputs = new double[layers.LongLength][][];
+                double[] outputs = ForwardLayers(inputs, layers.Length - 1, 0, ref layerInputs);
+
+                return new ForwardResult(layerInputs, new double[][] { outputs });
+            }
+
+            public ForwardResult Forward(double[][] inputs)
             {
                 double[][][] layerInputs = new double[layers.LongLength][][];
                 double[][] outputs = ForwardLayers(inputs, layers.Length - 1, 0, ref layerInputs);
 
-                return new DenseForwardResult(layerInputs, outputs);
+                return new ForwardResult(layerInputs, outputs);
             }
 
-            double[] ForwardLayers(double[] inputs, int toLayer, int fromLayer, ref double[][] layerInputs)
+            double[] ForwardLayers(double[] inputs, int toLayer, int fromLayer, ref double[][][] layerInputs)
             {
-                if (fromLayer < toLayer)
-                    layerInputs[toLayer] = weights[toLayer - 1].Forward(ForwardLayers(inputs, toLayer - 1, fromLayer, ref layerInputs));
-                else
-                    layerInputs[toLayer] = inputs;
+                layerInputs[toLayer] = new double[1][];
 
-                return layers[toLayer].Forward(layerInputs[toLayer]);
+                if (fromLayer < toLayer)
+                    layerInputs[toLayer][0] = weights[toLayer - 1].Forward(ForwardLayers(inputs, toLayer - 1, fromLayer, ref layerInputs));
+                else
+                    layerInputs[toLayer][0] = inputs;
+
+                return layers[toLayer].Forward(layerInputs[toLayer][0]);
             }
 
             double[][] ForwardLayers(double[][] inputs, int toLayer, int fromLayer, ref double[][][] layerInputs)
@@ -435,22 +192,6 @@
                     layerInputs[toLayer] = weights[toLayer - 1].Forward(ForwardLayers(inputs, toLayer - 1, fromLayer, ref layerInputs));
                 else
                     layerInputs[toLayer] = inputs;
-
-                return layers[toLayer].Forward(layerInputs[toLayer]);
-            }
-
-            double[][] ForwardLayers(IForwardInput[] inputs, int toLayer, int fromLayer, ref double[][][] layerInputs)
-            {
-                if (fromLayer < toLayer)
-                    layerInputs[toLayer] = weights[toLayer - 1].Forward(ForwardLayers(inputs, toLayer - 1, fromLayer, ref layerInputs));
-                else
-                {
-                    double[][] result = new double[inputs.Length][];
-                    for (int i = 0; i < inputs.Length; i++)
-                        result[i] = ((DenseForwardInput)inputs[i]).dense;
-
-                    layerInputs[toLayer] = result;
-                }
 
                 return layers[toLayer].Forward(layerInputs[toLayer]);
             }
@@ -507,7 +248,7 @@
 
         public interface INeuralNetworkBuilder : IDisposable
         {
-            public abstract Tuple<Layer[], WeightMatrix[]> Build();
+            abstract Tuple<Layer[], WeightMatrix[]> Build();
         }
 
         #region Optimizer
@@ -1037,6 +778,7 @@
             NaturalLog,
             Exponential,
             Linear,
+            Softmax,
             Custom
         }
 
@@ -1078,13 +820,12 @@
                 return base.ForwardComp(x * gamma + beta);
             }
 
-            public override void GradientDescent(ref double[][] errors, ForwardResult result, Optimizer optimizer)
+            public override void GradientDescent(ref double[][] errors, ForwardResult log, Optimizer optimizer)
             {
                 if (layerIndex == 0)
                     return;
 
                 Layer prevLayer = network.layers[layerIndex - 1];
-                DenseForwardResult log = (DenseForwardResult)result;
 
                 int sampleSize = errors.Length;
 
@@ -1223,45 +964,26 @@
 
             public override double ForwardComp(double x)
             {
-                switch (func)
-                {
-                    case ActivationFunc.Sigmoid:
-                        return 1 / (1 + Math.Exp(-x));
-                    case ActivationFunc.Tanh:
-                        return Math.Tanh(x);
-                    case ActivationFunc.ReLU:
-                        return (x > 0) ? x : 0;
-                    case ActivationFunc.NaturalLog:
-                        return Math.Log(x);
-                    case ActivationFunc.Exponential:
-                        return Math.Exp(x);
-                    case ActivationFunc.Linear:
-                    default: 
-                        return x;
-                }
+                return ForwardActivation(func, x);
             }
 
-            public override double FunctionDifferential(double x)
+            public override double[] FunctionDifferential(double[] X, IEnumerator<double> offsets)
             {
-                switch (func)
-                {
-                    case ActivationFunc.Sigmoid:
-                        double sigmoid = ForwardComp(x);
-                        return sigmoid * (1 - sigmoid);
-                    case ActivationFunc.Tanh:
-                        double sqrExp = Math.Exp(x);
-                        sqrExp *= sqrExp;
-                        return 4 / (sqrExp + (1 / sqrExp) + 2);
-                    case ActivationFunc.ReLU:
-                        return (x > 0) ? 1 : 0;
-                    case ActivationFunc.NaturalLog:
-                        return 1 / x;
-                    case ActivationFunc.Exponential:
-                        return Math.Exp(x);
-                    case ActivationFunc.Linear:
-                    default: 
-                        return 1;
-                }
+                double[] temp = new double[X.Length];
+                for (int i = 0; i < X.Length; i++, offsets.MoveNext())
+                    temp[i] += offsets.Current;
+
+                return ActivationDifferential(func, temp);
+            }
+
+            public override double[] FunctionDifferential(double[] X)
+            {
+                return ActivationDifferential(func, X);
+            }
+
+            public override double FunctionDifferential(double x, double offset = 0)
+            {
+                return ActivationDifferential(func, x + offset);
             }
 
             public static double ActivationDifferential(ActivationFunc func, double x)
@@ -1281,10 +1003,60 @@
                         return 1 / x;
                     case ActivationFunc.Exponential:
                         return Math.Exp(x);
+                    case ActivationFunc.Softmax:
+                        return 0;
                     case ActivationFunc.Linear:
                     default: 
                         return 1;
                 }
+            }
+
+            public static double[] ActivationDifferential(ActivationFunc func, double[] X)
+            {
+                double[] result = new double[X.Length];
+                switch (func)
+                {
+                    case ActivationFunc.Sigmoid:
+                        for (int i = 0; i < X.Length; i++)
+                        {
+                            double sigmoid = ForwardActivation(func, X[i]);
+                            result[i] = sigmoid * (1 - sigmoid);
+                        }
+                        break;
+                    case ActivationFunc.Tanh:
+                        for (int i = 0; i < X.Length; i++)
+                        {
+                            double sqrExp = Math.Exp(X[i]);
+                            sqrExp *= sqrExp;
+                            result[i] = 4 / (sqrExp + (1 / sqrExp) + 2);
+                        }
+                        break;
+                    case ActivationFunc.ReLU:
+                        for (int i = 0; i < X.Length; i++)
+                            result[i] = (X[i] > 0) ? 1 : 0;
+                        break;
+                    case ActivationFunc.NaturalLog:
+                        for (int i = 0; i < X.Length; i++)
+                            result[i] = 1 / X[i];
+                        break;
+                    case ActivationFunc.Exponential:
+                        for (int i = 0; i < X.Length; i++)
+                            result[i] = Math.Exp(X[i]);
+                        break;
+                    case ActivationFunc.Softmax:
+                        double[] softmax = ForwardActivation(func, X);
+                        for (int i = 0; i < X.Length; i++)
+                            for (int j = 0; j < X.Length; j++)
+                                result[i] += (i == j) ? softmax[i] * (1 - softmax[i]) : - softmax[i] * softmax[j];
+                        break;
+                    case ActivationFunc.Linear:
+                    default:
+                        for (int i = 0; i < X.Length; i++)
+                            result[i] = 1;
+                        break;
+                }
+
+                return result;
             }
 
             public static double ForwardActivation(ActivationFunc func, double x)
@@ -1301,10 +1073,56 @@
                         return Math.Log(x);
                     case ActivationFunc.Exponential:
                         return Math.Exp(x);
+                    case ActivationFunc.Softmax:
+                        return 1;
                     case ActivationFunc.Linear:
                     default:
                         return x;
                 }
+            }
+
+            public static double[] ForwardActivation(ActivationFunc func, double[] X)
+            {
+                double[] result = new double[X.Length];
+                switch (func)
+                {
+                    case ActivationFunc.Sigmoid:
+                        for (int i = 0; i < X.Length; i++)
+                            result[i] = 1 / (1 + Math.Exp(-X[i]));
+                        break;
+                    case ActivationFunc.Tanh:
+                        for (int i = 0; i < X.Length; i++)
+                            result[i] = Math.Tanh(X[i]);
+                        break;
+                    case ActivationFunc.ReLU:
+                        for (int i = 0; i < X.Length; i++)
+                            result[i] = (X[i] > 0) ? X[i] : 0;
+                        break;
+                    case ActivationFunc.NaturalLog:
+                        for (int i = 0; i < X.Length; i++)
+                            result[i] = Math.Log(X[i]);
+                        break;
+                    case ActivationFunc.Exponential:
+                        for (int i = 0; i < X.Length; i++)
+                            result[i] = Math.Exp(X[i]);
+                        break;
+                    case ActivationFunc.Softmax:
+                        double temp = 0;
+                        for (int i = 0; i < X.Length; i++) 
+                        {
+                            result[i] = Math.Exp(X[i]);
+                            temp += result[i];
+                        }
+                        temp = 1 / temp;
+                        for (int i = 0; i < X.Length; i++)
+                            result[i] *= temp;
+                        break;
+                    case ActivationFunc.Linear:
+                    default:
+                        return X;
+                }
+
+                return result;
             }
         }
 
@@ -1351,25 +1169,21 @@
             public virtual void SetBias(int index, double value) => biases[index] = useBias ? value : 0; 
 
             /// <returns>Returns descended errors</returns>
-            public virtual void GradientDescent(ref double[][] errors, ForwardResult result, Optimizer optimizer)
+            public virtual void GradientDescent(ref double[][] errors, ForwardResult log, Optimizer optimizer)
             {
                 if (!useBias)
                     return;
 
-                DenseForwardResult log = ((DenseForwardResult)result);
-
-                for (int i = 0; i < dim; i++)
+                for (int sample = 0; sample < errors.Length; sample++)
                 {
-                    double gradSum = 0;
+                    double[] df = FunctionDifferential(log.layerInputs[layerIndex][sample], Enumerable.Range(0, dim).Select(GetBias).GetEnumerator());
 
                     // bias update
-                    for (int sample = 0; sample < errors.Length; sample++)
+                    for (int i = 0; i < dim; i++)
                     {
-                        errors[sample][i] *= FunctionDifferential(log.layerInputs[layerIndex][sample][i] + GetBias(i));
-                        gradSum += errors[sample][i];
+                        errors[sample][i] *= df[i];
+                        SetBias(i, optimizer.BiasUpdate(layerIndex, i, errors[sample][i]));
                     }
-
-                    SetBias(i, optimizer.BiasUpdate(layerIndex, i, gradSum));
                 }
             }
 
@@ -1400,9 +1214,36 @@
             public virtual double ForwardComp(double x) => x;
 
             /// <summary>
-            /// Get <b>df(bias, x) / dx</b> such <b>x</b> can be another function
+            /// Will be called indirectly through <b>FunctionDifferential(double[] X)</b> if wasn't overridden
             /// </summary>
-            public virtual double FunctionDifferential(double x) => 1;
+            /// <returns> Return <b>df(bias, x) / dx</b></returns>
+            public virtual double FunctionDifferential(double x, double offset = 0) => 1 + offset;
+
+            /// <summary>
+            /// Will be called directly in the <b>GradientDescent</b> method
+            /// </summary>
+            /// <returns> Return <b>df(bias, x) / dx</b> for each x in X </returns>
+            public virtual double[] FunctionDifferential(double[] X)
+            {
+                double[] result = new double[X.Length];
+                for (int i = 0; i < X.Length; i++)
+                    result[i] = X[i];
+
+                return result;
+            }
+
+            /// <summary>
+            /// Will be called directly in the <b>GradientDescent</b> method
+            /// </summary>
+            /// <returns> Return <b>df(bias, x) / dx</b> for each x in X </returns>
+            public virtual double[] FunctionDifferential(double[] X, IEnumerator<double> offsets)
+            {
+                double[] result = new double[X.Length];
+                for (int i = 0; i < X.Length; i++, offsets.MoveNext())
+                    result[i] = X[i] + offsets.Current;
+
+                return result;
+            }
 
             public virtual WeightMatrix GenerateWeightMatrix()
             {
@@ -1495,11 +1336,9 @@
                 }
             }
 
-            public override void GradientDescent(ref double[][] errors, ForwardResult result, Optimizer optimizer)
+            public override void GradientDescent(ref double[][] errors, ForwardResult log, Optimizer optimizer)
             {
                 if (!useWeights) return;
-
-                DenseForwardResult log = (DenseForwardResult)result;
 
                 for (int i = 0; i < matrix.Length; i++)
                 {
@@ -1607,9 +1446,8 @@
                 matrix = new double[outDim, inDim];
             }
 
-            public override void GradientDescent(ref double[][] errors, ForwardResult result, Optimizer optimizer)
+            public override void GradientDescent(ref double[][] errors, ForwardResult log, Optimizer optimizer)
             {
-                DenseForwardResult log = (DenseForwardResult)result;
                 Layer prevLayer = network.layers[weightsIndex];
 
                 double[][] weightErrors = new double[errors.Length][];
@@ -1692,6 +1530,87 @@
         }
 
         #endregion
+
+        namespace RL
+        { 
+            public interface IEnvironment
+            {
+                IEnumerable<IAgent> agents { get; }
+
+                void Init();
+
+                /// <summary>
+                /// Reset all including environment and agents
+                /// </summary>
+                void Reset();
+            }
+
+            public interface IAgent
+            {
+                IEnvironment envi { get; }
+                IPolicy policy { get; }
+                IPolicyOptimization policyOp { get; }
+
+                /// <summary>
+                /// Reset states, not policy
+                /// </summary>
+                void Reset();
+
+                /// <returns><b>Observation</b> as double[] and <b>reward</b> as double</returns>
+                (double[], double) TakeAction(int action);
+            }
+
+            public interface IPolicy
+            {
+                double[] GetActionProbs(double[] obs);
+
+                void Backward(double[] loss);
+            }
+
+            public interface IPolicyOptimization 
+            {
+                INeuralNetwork param { get; }
+
+                int GetAction(double[] actProbs);
+
+                virtual double[][] ComputeLoss(double[][] obs, int[] actions, double[] mass, bool logits = false)
+                {
+                    double[][] loss = new double[obs.Length][];
+                    for (int i = 0; i < loss.Length; i++)
+                        loss[i] = ComputeLoss(obs[i], actions[i], mass[i], logits);
+
+                    return loss;
+                }
+
+                double[] ComputeLoss(double[] obs, int action, double mass, bool logits = false);
+            }
+
+            public class PolicyGradient : IPolicyOptimization
+            {
+                public INeuralNetwork param { get; private set; }
+
+                public PolicyGradient(INeuralNetwork param) 
+                {
+                    this.param = param;
+                }
+
+                public virtual int GetAction(double[] actProbs) => MathBF.DrawProbs(actProbs);
+
+                public virtual double[] ComputeLoss(double[] obs, int action, double mass, bool logits = false)
+                {
+                    double[] outputs;
+                    if (logits)
+                        outputs = param.Forward(obs).outputs[0];
+                    else
+                        outputs = ActivationLayer.ForwardActivation(ActivationFunc.Softmax, param.Forward(obs).outputs[0]);
+
+                    for (int i = 0; i < outputs.Length; i++)
+                        outputs[i] = Math.Log(outputs[action]) * mass;
+
+                    return outputs;
+                }
+            }
+        }
     }
 
     namespace Data
@@ -2085,8 +2004,25 @@
         }
     }
 
-    namespace Utility
+    namespace Utility 
     {
+        public static class MathBF
+        {
+            public static int DrawProbs(double[] probs)
+            {
+                double rand = new Random().NextDouble();
+
+                for (int i = 0; i < probs.Length; i++)
+                {
+                    rand -= probs[i];
+                    if (rand <= 0)
+                        return i;
+                }
+
+                return -1;
+            }
+        }
+
         namespace Linear
         {
             public static class LinearMethod 
@@ -2099,27 +2035,68 @@
                     Vector
                         result = new double[A.dim],
                         residual = Vector.Clone(b.content), preResidual = Vector.Clone(b.content),
-                        direction = Vector.Clone(residual.content);
+                        direction = Vector.Clone(residual.content), scaledDirection = A * direction;
 
                     if (Vector.Dot(residual, residual) > epsilon)
                     {
-                        double alpha = Vector.Dot(residual, residual) / Vector.Dot(direction * A, direction);
+                        double alpha = Vector.Dot(residual, residual) / Vector.Dot(direction, scaledDirection);
 
                         result += alpha * direction;
-                        residual -= alpha * A * direction;
+                        residual -= alpha * scaledDirection;
                     }
-
                     while (Vector.Dot(residual, residual) > epsilon)
                     {
                         double beta = Vector.Dot(residual, residual) / Vector.Dot(preResidual, preResidual);
 
                         direction = residual + beta * direction;
+                        scaledDirection = A * direction;
 
-                        double alpha = Vector.Dot(residual, residual) / Vector.Dot(direction * A, direction);
+                        double alpha = Vector.Dot(residual, residual) / Vector.Dot(direction, scaledDirection);
 
                         preResidual.SetTo(residual);
                         result += alpha * direction;
-                        residual -= alpha * A * direction;
+                        residual -= alpha * scaledDirection;
+                    }
+
+                    return result.content;
+                }
+
+                public static Vector CGMethod(ISquareMatrix A, Vector b, IPreconditioner preconditioner, double epsilon = 1E-6)
+                {
+                    if (A.dim != b.dim)
+                        throw new Exception("Invalid Conjugate Gradient Method input dims");
+
+                    preconditioner.Init(A, b);
+
+                    Vector
+                        result = new double[A.dim],
+                        residual = Vector.Clone(b.content), preResidual = Vector.Clone(b.content),
+                        preconditionedResidual = preconditioner.Forward(residual), prePreconditionedResidual = preconditioner.Forward(residual),
+                        direction = Vector.Clone(preconditionedResidual.content), scaledDirection = A * direction;
+
+                    if (Vector.Dot(residual, residual) > epsilon)
+                    {
+                        double alpha = Vector.Dot(residual, preconditionedResidual) / Vector.Dot(direction, scaledDirection);
+
+                        result += alpha * direction;
+                        residual -= alpha * scaledDirection;
+                    }
+
+                    while (Vector.Dot(residual, residual) > epsilon)
+                    {
+                        preconditionedResidual = preconditioner.Forward(residual);
+
+                        double beta = Vector.Dot(residual, preconditionedResidual) / Vector.Dot(preResidual, prePreconditionedResidual);
+
+                        direction = preconditionedResidual + beta * direction;
+                        scaledDirection = A * direction;
+
+                        double alpha = Vector.Dot(residual, preconditionedResidual) / Vector.Dot(direction, scaledDirection);
+
+                        preResidual.SetTo(residual);
+                        prePreconditionedResidual.SetTo(preconditionedResidual);
+                        result += alpha * direction;
+                        residual -= alpha * scaledDirection;
                     }
 
                     return result.content;
@@ -2132,6 +2109,15 @@
                     IMatrix At = A.Transpose;
 
                     return CGMethod((At * A).ToSquare, At * b, epsilon);
+                }
+
+                public static Vector CGNEMethod(IMatrix A, Vector b, IPreconditioner preconditioner, double epsilon = 1E-6)
+                {
+                    if (A.rowCount != b.dim)
+                        throw new Exception("Invalid Conjugate Gradient Method input dims");
+                    IMatrix At = A.Transpose;
+
+                    return CGMethod((At * A).ToSquare, At * b, preconditioner, epsilon);
                 }
 
                 /// <returns>A tuple of a lower matrix and an upper LU factorizations respectively</returns>
@@ -2199,6 +2185,35 @@
                         }
 
                     return result;
+                }
+
+                public interface IPreconditioner
+                {
+                    public void Init(ISquareMatrix A, Vector b);
+
+                    public Vector Forward(Vector value);
+                }
+
+                public class LUPreconditioner : IPreconditioner
+                {
+                    public TriangularMatrix lower { get; protected set; }
+                    public TriangularMatrix upper { get; protected set; }
+
+                    public virtual void Init(ISquareMatrix A, Vector b)
+                    {
+                        (lower, upper) = IncompleteLUFac(A);
+                    }
+
+                    public virtual Vector Forward(Vector value) => upper.Substitute(lower.Substitute(value));
+                }
+
+                public class CholeskyPreconditioner : LUPreconditioner
+                {
+                    public override void Init(ISquareMatrix A, Vector b)
+                    {
+                        lower = IncompleteCholeskyFac(A);
+                        upper = (TriangularMatrix)lower.Transpose;
+                    }
                 }
             } 
 
@@ -2930,7 +2945,7 @@
                 {
                     this.content = content;
                     this.isUpper = isUpper;
-                    this.dim = (int)(MathF.Sqrt(1 + 8 * dim) - 1) >> 1;
+                    this.dim = (int)(MathF.Sqrt(1 + 8 * content.Length) - 1) >> 1;
                 }
 
                 public virtual IMatrix Instance() => new TriangularMatrix(dim, isUpper);
@@ -2964,6 +2979,37 @@
                         content[((row * (1 + row)) >> 1) + col] = value;
 
                     return true;
+                }
+
+                public virtual Vector Substitute(Vector rhs)
+                {
+                    if (rhs.dim != dim)
+                        throw new Exception("Invalid inputs for triangular substitution");
+
+                    Vector result = new Vector(dim);
+
+                    if (isUpper)
+                    {
+                        for (int i = dim - 1; i >= 0; i--)
+                        {
+                            result.content[i] = rhs.content[i];
+                            for (int j = i + 1; j < dim; j++)
+                                result.content[i] -= result.content[j] * Get(i, j);
+                            result.content[i] /= Get(i, i);
+                        }
+                    }
+                    else
+                    {
+                        for (int i = 0; i < dim; i++)
+                        {
+                            result.content[i] = rhs.content[i];
+                            for (int j = 0; j < i; j++)
+                                result.content[i] -= result.content[j] * Get(i, j);
+                            result.content[i] /= Get(i, i);
+                        }
+                    }
+
+                    return result;
                 }
 
                 public virtual bool SetTo(IMatrix matrix)
